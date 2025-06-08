@@ -28,6 +28,8 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
+
+    console.log("refreshToken", refreshToken);
     const connection = await pool.getConnection();
     const [users] = await connection.query(
       "SELECT * FROM users WHERE refresh_token = ?",
@@ -41,6 +43,8 @@ export async function POST(request: Request) {
         { status: 401 }
       );
     }
+
+    console.log("user", user);
     // 새 accessToken 발급
     const token = signJwt({ id: user.id, role: user.authority });
     connection.release();
