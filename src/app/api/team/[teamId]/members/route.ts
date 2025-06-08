@@ -9,13 +9,9 @@ const AUTH_HEADER = "authorization";
  * 팀 멤버 추가 API
  * POST /api/team/[teamId]/members
  * @param request - { userId, role }
- * @param context - { params: { teamId } }
  * @returns 성공 여부
  */
-export async function POST(
-  request: NextRequest,
-  context: { params: { teamId: string } }
-) {
+export async function POST(request: NextRequest) {
   // 인증 확인
   const authHeader = request.headers.get(AUTH_HEADER);
   const token = authHeader?.split(" ")[1];
@@ -24,7 +20,11 @@ export async function POST(
   }
 
   const payload = verifyJwt(token);
-  const teamId = parseInt(context.params.teamId);
+
+  // URL에서 팀 ID 추출
+  const url = new URL(request.url);
+  const pathParts = url.pathname.split("/");
+  const teamId = parseInt(pathParts[pathParts.indexOf("team") + 1]);
 
   if (isNaN(teamId)) {
     return NextResponse.json(
@@ -137,13 +137,9 @@ export async function POST(
  * 팀 멤버 역할 변경 API
  * PATCH /api/team/[teamId]/members
  * @param request - { userId, role }
- * @param context - { params: { teamId } }
  * @returns 성공 여부
  */
-export async function PATCH(
-  request: NextRequest,
-  context: { params: { teamId: string } }
-) {
+export async function PATCH(request: NextRequest) {
   // 인증 확인
   const authHeader = request.headers.get(AUTH_HEADER);
   const token = authHeader?.split(" ")[1];
@@ -151,7 +147,10 @@ export async function PATCH(
     return NextResponse.json({ error: "인증이 필요합니다." }, { status: 401 });
   }
 
-  const teamId = parseInt(context.params.teamId);
+  // URL에서 팀 ID 추출
+  const url = new URL(request.url);
+  const pathParts = url.pathname.split("/");
+  const teamId = parseInt(pathParts[pathParts.indexOf("team") + 1]);
 
   if (isNaN(teamId)) {
     return NextResponse.json(
@@ -258,13 +257,9 @@ export async function PATCH(
  * 팀 멤버 제거 API
  * DELETE /api/team/[teamId]/members
  * @param request - 요청 객체 (searchParams로 userId 전달)
- * @param context - { params: { teamId } }
  * @returns 성공 여부
  */
-export async function DELETE(
-  request: NextRequest,
-  context: { params: { teamId: string } }
-) {
+export async function DELETE(request: NextRequest) {
   // 인증 확인
   const authHeader = request.headers.get(AUTH_HEADER);
   const token = authHeader?.split(" ")[1];
@@ -274,7 +269,7 @@ export async function DELETE(
 
   const url = new URL(request.url);
   const pathParts = url.pathname.split("/");
-  const teamId = pathParts[pathParts.length - 2];
+  const teamId = pathParts[pathParts.indexOf("team") + 1];
 
   if (!teamId) {
     return NextResponse.json(

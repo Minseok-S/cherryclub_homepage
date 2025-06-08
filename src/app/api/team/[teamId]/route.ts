@@ -9,13 +9,9 @@ const AUTH_HEADER = "authorization";
  * 특정 팀 조회 API
  * GET /api/team/[teamId]
  * @param request - NextRequest 객체
- * @param context - { params: { teamId } }
  * @returns 팀 정보 및 멤버 목록
  */
-export async function GET(
-  request: NextRequest,
-  context: { params: { teamId: string } }
-) {
+export async function GET(request: NextRequest) {
   // 인증 확인
   const authHeader = request.headers.get(AUTH_HEADER);
   const token = authHeader?.split(" ")[1];
@@ -24,7 +20,8 @@ export async function GET(
   }
 
   const url = new URL(request.url);
-  const teamId = url.pathname.split("/").pop();
+  const pathParts = url.pathname.split("/");
+  const teamId = pathParts[pathParts.indexOf("team") + 1];
 
   if (!teamId) {
     return NextResponse.json(

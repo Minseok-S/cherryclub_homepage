@@ -12,18 +12,21 @@
  *   .then(res => res.json())
  *   .then(data => console.log(data));
  */
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { pool } from "../../../utils/db";
 import { verifyJwt } from "../../../utils/jwt";
 
 const AUTH_HEADER = "authorization";
 
-export async function PATCH(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
+export async function PATCH(request: NextRequest) {
   let connection;
   try {
+    // URL에서 id 추출
+    const url = new URL(request.url);
+    const pathParts = url.pathname.split("/");
+    const userIndex = pathParts.indexOf("users");
+    const id = pathParts[userIndex + 1];
+
     // 1. JWT 인증
     const authHeader = request.headers.get(AUTH_HEADER);
     const token = authHeader?.split(" ")[1];
@@ -42,7 +45,7 @@ export async function PATCH(
     }
 
     // 2. 파라미터 및 바디 파싱
-    const userId = Number(params.id);
+    const userId = Number(id);
     if (!userId) {
       return NextResponse.json(
         { success: false, message: "유저 id가 올바르지 않습니다." },

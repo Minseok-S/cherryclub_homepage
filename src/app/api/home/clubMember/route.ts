@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
 
     // 같은 대학교(universe_id)를 가진 사용자들 조회
     const [sameUniversityUsers] = await connection.query(
-      `SELECT id, name FROM users WHERE universe_id = ? `,
+      `SELECT id, name FROM users WHERE universe_id = ? AND enrollment_status != '졸업'`,
       [universe_id]
     );
 
