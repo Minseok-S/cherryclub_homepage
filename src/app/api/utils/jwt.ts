@@ -13,7 +13,7 @@ const JWT_SECRET_KEY = JWT_SECRET as string;
 /**
  * JWT 토큰 만료 시간 (초)
  */
-const JWT_EXPIRES_IN = 60 * 60 * 1; // 1시간
+const JWT_EXPIRES_IN = 60 * 60 * 24; // 24시간으로 연장
 
 /**
  * JWT 토큰을 발급합니다.
@@ -23,6 +23,9 @@ const JWT_EXPIRES_IN = 60 * 60 * 1; // 1시간
  *   const token = signJwt({ id: 1, role: 'admin' });
  */
 export function signJwt(payload: object): string {
+  console.log(
+    `새 JWT 토큰 발급: ${JSON.stringify(payload)}, 만료: ${JWT_EXPIRES_IN}초`
+  );
   return jwt.sign(payload, JWT_SECRET_KEY, { expiresIn: JWT_EXPIRES_IN });
 }
 
@@ -36,9 +39,11 @@ export function signJwt(payload: object): string {
  */
 export function verifyJwt(token: string): any | null {
   try {
-    return jwt.verify(token, JWT_SECRET_KEY);
+    const decoded = jwt.verify(token, JWT_SECRET_KEY);
+    console.log(`JWT 토큰 검증 성공: ${JSON.stringify(decoded)}`);
+    return decoded;
   } catch (err) {
-    console.error(err);
+    console.error("JWT 토큰 검증 실패:", err);
     return null;
   }
 }
@@ -50,5 +55,7 @@ export function verifyJwt(token: string): any | null {
  *   const refreshToken = generateRefreshToken();
  */
 export function generateRefreshToken(): string {
-  return crypto.randomBytes(32).toString("hex");
+  const token = crypto.randomBytes(32).toString("hex");
+  console.log(`새 리프레시 토큰 생성: ${token}`);
+  return token;
 }
