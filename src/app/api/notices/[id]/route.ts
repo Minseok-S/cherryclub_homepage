@@ -46,13 +46,10 @@ export async function GET(
         (SELECT COUNT(*) FROM notice_comments WHERE notice_id = n.id) AS comment_count,
         u.id AS author_id, u.name AS author_name,
         n.is_pinned,
-        JSON_ARRAYAGG(DISTINCT ni.image_url) AS image_urls,
         EXISTS(SELECT 1 FROM notice_likes WHERE notice_id = n.id AND user_id = ?) AS is_liked
       FROM notices n
       JOIN users u ON n.author_id = u.id
-      LEFT JOIN notice_images ni ON n.id = ni.notice_id
-      WHERE n.id = ?
-      GROUP BY n.id`,
+      WHERE n.id = ?`,
       [userId || 0, id]
     );
 
@@ -64,14 +61,16 @@ export async function GET(
       );
     }
 
-    // 이미지 URLs 처리 (NULL 값 제거)
+    // 이미지 조회
+    const [imageRows] = await connection.query(
+      "SELECT image_url FROM notice_images WHERE notice_id = ?",
+      [id]
+    );
+
+    // 공지사항 객체 구성
     const notice = {
       ...(noticeRows as any[])[0],
-      image_urls:
-        (noticeRows as any[])[0].image_urls &&
-        (noticeRows as any[])[0].image_urls[0] !== null
-          ? (noticeRows as any[])[0].image_urls
-          : [],
+      image_urls: (imageRows as any[]).map((img) => img.image_url),
       is_liked: !!(noticeRows as any[])[0].is_liked,
     };
 
@@ -239,27 +238,26 @@ export async function PUT(
         (SELECT COUNT(*) FROM notice_comments WHERE notice_id = n.id) AS comment_count,
         u.id AS author_id, u.name AS author_name,
         n.is_pinned,
-        JSON_ARRAYAGG(DISTINCT ni.image_url) AS image_urls,
         EXISTS(SELECT 1 FROM notice_likes WHERE notice_id = n.id AND user_id = ?) AS is_liked
       FROM notices n
       JOIN users u ON n.author_id = u.id
-      LEFT JOIN notice_images ni ON n.id = ni.notice_id
-      WHERE n.id = ?
-      GROUP BY n.id`,
+      WHERE n.id = ?`,
       [userId, id]
+    );
+
+    // 이미지 조회
+    const [imageRows] = await connection.query(
+      "SELECT image_url FROM notice_images WHERE notice_id = ?",
+      [id]
     );
 
     await connection.commit();
     connection.release();
 
-    // 이미지 URLs 처리 (NULL 값 제거)
+    // 공지사항 객체 구성
     const notice = {
       ...(noticeRows as any[])[0],
-      image_urls:
-        (noticeRows as any[])[0].image_urls &&
-        (noticeRows as any[])[0].image_urls[0] !== null
-          ? (noticeRows as any[])[0].image_urls
-          : [],
+      image_urls: (imageRows as any[]).map((img) => img.image_url),
       is_liked: !!(noticeRows as any[])[0].is_liked,
     };
 

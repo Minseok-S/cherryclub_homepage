@@ -45,26 +45,28 @@ export async function GET(request: NextRequest) {
         (SELECT COUNT(*) FROM notice_comments WHERE notice_id = n.id) AS comment_count,
         u.id AS author_id, u.name AS author_name,
         n.is_pinned,
-        JSON_ARRAYAGG(DISTINCT ni.image_url) AS image_urls,
         EXISTS(SELECT 1 FROM notice_likes WHERE notice_id = n.id AND user_id = ?) AS is_liked
       FROM notices n
       JOIN users u ON n.author_id = u.id
-      LEFT JOIN notice_images ni ON n.id = ni.notice_id
-      GROUP BY n.id
       ORDER BY n.is_pinned DESC, n.created_at DESC
       LIMIT ? OFFSET ?`,
       [userId || 0, pageSize, offset]
     );
 
-    // 이미지 URLs 처리 (NULL 값 제거)
-    const notices = (noticesRows as any[]).map((notice) => ({
-      ...notice,
-      image_urls:
-        notice.image_urls && notice.image_urls[0] !== null
-          ? notice.image_urls
-          : [],
-      is_liked: !!notice.is_liked,
-    }));
+    // 각 공지사항에 대한 이미지 조회
+    const notices = [];
+    for (const notice of noticesRows as any[]) {
+      const [imageRows] = await connection.query(
+        "SELECT image_url FROM notice_images WHERE notice_id = ?",
+        [notice.id]
+      );
+
+      notices.push({
+        ...notice,
+        image_urls: (imageRows as any[]).map((img) => img.image_url),
+        is_liked: !!notice.is_liked,
+      });
+    }
 
     connection.release();
 
@@ -160,27 +162,26 @@ export async function POST(request: NextRequest) {
         (SELECT COUNT(*) FROM notice_comments WHERE notice_id = n.id) AS comment_count,
         u.id AS author_id, u.name AS author_name,
         n.is_pinned,
-        JSON_ARRAYAGG(DISTINCT ni.image_url) AS image_urls,
         0 AS is_liked
       FROM notices n
       JOIN users u ON n.author_id = u.id
-      LEFT JOIN notice_images ni ON n.id = ni.notice_id
-      WHERE n.id = ?
-      GROUP BY n.id`,
+      WHERE n.id = ?`,
+      [noticeId]
+    );
+
+    // 이미지 조회
+    const [imageRows] = await connection.query(
+      "SELECT image_url FROM notice_images WHERE notice_id = ?",
       [noticeId]
     );
 
     await connection.commit();
     connection.release();
 
-    // 이미지 URLs 처리 (NULL 값 제거)
+    // 공지사항 객체 구성
     const notice = {
       ...(noticeRows as any[])[0],
-      image_urls:
-        (noticeRows as any[])[0].image_urls &&
-        (noticeRows as any[])[0].image_urls[0] !== null
-          ? (noticeRows as any[])[0].image_urls
-          : [],
+      image_urls: (imageRows as any[]).map((img) => img.image_url),
       is_liked: false,
     };
 
