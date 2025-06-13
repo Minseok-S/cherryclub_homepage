@@ -90,9 +90,11 @@ export async function PATCH(
         c.created_at, c.updated_at, 
         c.like_count,
         u.id AS author_id, u.name AS author_name,
+        univ.name AS author_school,
         EXISTS(SELECT 1 FROM comment_likes WHERE comment_id = c.id AND user_id = ?) AS is_liked
       FROM notice_comments c
       JOIN users u ON c.author_id = u.id
+      LEFT JOIN Universities univ ON u.universe_id = univ.id
       WHERE c.id = ?`,
       [userId, id]
     );

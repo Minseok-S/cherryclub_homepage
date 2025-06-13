@@ -53,9 +53,11 @@ export async function GET(
         c.created_at, c.updated_at, 
         c.like_count,
         u.id AS author_id, u.name AS author_name,
+        univ.name AS author_school,
         EXISTS(SELECT 1 FROM comment_likes WHERE comment_id = c.id AND user_id = ?) AS is_liked
       FROM notice_comments c
       JOIN users u ON c.author_id = u.id
+      LEFT JOIN Universities univ ON u.universe_id = univ.id
       WHERE c.notice_id = ?
       ORDER BY 
         CASE WHEN c.parent_id IS NULL THEN c.id ELSE c.parent_id END,
@@ -200,9 +202,11 @@ export async function POST(
         c.created_at, c.updated_at, 
         c.like_count,
         u.id AS author_id, u.name AS author_name,
+        univ.name AS author_school,
         0 AS is_liked
       FROM notice_comments c
       JOIN users u ON c.author_id = u.id
+      LEFT JOIN Universities univ ON u.universe_id = univ.id
       WHERE c.id = ?`,
       [commentId]
     );

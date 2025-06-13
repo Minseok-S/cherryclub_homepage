@@ -44,10 +44,12 @@ export async function GET(request: NextRequest) {
         n.view_count, n.like_count, 
         (SELECT COUNT(*) FROM notice_comments WHERE notice_id = n.id) AS comment_count,
         u.id AS author_id, u.name AS author_name,
+        univ.name AS author_school,
         n.is_pinned,
         EXISTS(SELECT 1 FROM notice_likes WHERE notice_id = n.id AND user_id = ?) AS is_liked
       FROM notices n
       JOIN users u ON n.author_id = u.id
+      LEFT JOIN Universities univ ON u.universe_id = univ.id
       ORDER BY n.is_pinned DESC, n.created_at DESC
       LIMIT ? OFFSET ?`,
       [userId || 0, pageSize, offset]
@@ -161,10 +163,12 @@ export async function POST(request: NextRequest) {
         n.view_count, n.like_count, 
         (SELECT COUNT(*) FROM notice_comments WHERE notice_id = n.id) AS comment_count,
         u.id AS author_id, u.name AS author_name,
+        univ.name AS author_school,
         n.is_pinned,
         0 AS is_liked
       FROM notices n
       JOIN users u ON n.author_id = u.id
+      LEFT JOIN Universities univ ON u.universe_id = univ.id
       WHERE n.id = ?`,
       [noticeId]
     );
