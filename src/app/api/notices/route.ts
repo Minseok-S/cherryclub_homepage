@@ -205,73 +205,141 @@ export async function POST(request: NextRequest) {
       const users = usersRows as Array<{ id: string; fcm_token: string }>;
 
       if (users.length > 0) {
+        // FCM 토큰 검증 및 디버깅
+        console.log(`📊 데이터베이스에서 조회된 FCM 토큰: ${users.length}개`);
+
+        const validTokenData: Array<{
+          userId: string;
+          fcmToken: string;
+          badgeCount: number;
+        }> = [];
+
         // 각 사용자에게 알림 DB 레코드 생성 및 뱃지 수 관리
-        const notificationPromises = users.map(async (user) => {
-          // 알림 레코드 DB 저장
-          await connection.query(
-            `INSERT INTO notifications 
-             (user_id, title, message, type, related_id, created_at, is_read) 
-             VALUES (?, ?, ?, ?, ?, NOW(), 0)`,
-            [
-              user.id,
-              "새 공지사항",
-              notice.title.length > 50
-                ? notice.title.substring(0, 50) + "..."
-                : notice.title,
-              "notice",
-              notice.id,
-            ]
-          );
-
-          // 해당 사용자의 읽지 않은 알림 수 조회 (iOS 뱃지용)
-          const [unreadCountRows] = await connection.query(
-            "SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND is_read = 0",
-            [user.id]
-          );
-          const unreadCount = (unreadCountRows as any[])[0].count;
-
-          return {
-            fcmToken: user.fcm_token,
-            badgeCount: unreadCount,
-          };
-        });
-
-        const notificationData = await Promise.all(notificationPromises);
-
-        // 푸시 알림 전송 (백그라운드 작업으로 처리)
-        setImmediate(async () => {
+        for (const user of users) {
           try {
-            // FCM 토큰별로 개별 전송 (iOS 뱃지 수 개별 적용)
-            const sendPromises = notificationData.map(
-              ({ fcmToken, badgeCount }) =>
-                FCMService.sendToDevice(
-                  fcmToken,
-                  "새 공지사항",
-                  notice.title.length > 100
-                    ? notice.title.substring(0, 100) + "..."
-                    : notice.title,
-                  {
-                    type: "notice",
-                    notice_id: notice.id.toString(),
-                    action: "open_notice",
-                  },
-                  badgeCount
-                )
+            // FCM 토큰 유효성 검증
+            const tokenValidation = FCMService.validateToken(user.fcm_token);
+            if (!tokenValidation.isValid) {
+              console.warn(
+                `❌ 유효하지 않은 FCM 토큰 (User ${user.id}): ${
+                  tokenValidation.reason
+                } - 토큰: ${user.fcm_token.substring(0, 30)}...`
+              );
+              continue; // 유효하지 않은 토큰은 건너뛰기
+            }
+
+            // 알림 레코드 DB 저장
+            await connection.query(
+              `INSERT INTO notifications 
+               (user_id, title, message, type, related_id, created_at, is_read) 
+               VALUES (?, ?, ?, ?, ?, NOW(), 0)`,
+              [
+                user.id,
+                "새 공지사항",
+                notice.title.length > 50
+                  ? notice.title.substring(0, 50) + "..."
+                  : notice.title,
+                "notice",
+                notice.id,
+              ]
             );
 
-            const results = await Promise.all(sendPromises);
-            const successCount = results.filter(Boolean).length;
-            console.log(
-              `✅ 공지사항 푸시 알림 전송 완료: ${successCount}/${notificationData.length}명에게 전송`
+            // 해당 사용자의 읽지 않은 알림 수 조회 (iOS 뱃지용)
+            const [unreadCountRows] = await connection.query(
+              "SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND is_read = 0",
+              [user.id]
             );
-          } catch (fcmError) {
-            console.error("❌ FCM 전송 중 오류:", fcmError);
+            const unreadCount = (unreadCountRows as any[])[0].count;
+
+            validTokenData.push({
+              userId: user.id,
+              fcmToken: user.fcm_token,
+              badgeCount: unreadCount,
+            });
+          } catch (notificationError) {
+            console.error(
+              `❌ 사용자 ${user.id} 알림 처리 실패:`,
+              notificationError
+            );
           }
-        });
+        }
 
         console.log(
-          `📨 공지사항 생성 - ${users.length}명의 사용자에게 알림 예약됨`
+          `✅ 유효한 FCM 토큰: ${validTokenData.length}개 (총 ${users.length}개 중)`
         );
+
+        if (validTokenData.length > 0) {
+          // 푸시 알림 전송 (백그라운드 작업으로 처리)
+          setImmediate(async () => {
+            try {
+              console.log(
+                `📤 FCM 푸시 알림 전송 시작: ${validTokenData.length}개 토큰`
+              );
+
+              // 새로운 다중 전송 메서드 사용
+              const result = await FCMService.sendToMultipleDevices(
+                validTokenData.map((data) => data.fcmToken),
+                "새 공지사항",
+                notice.title.length > 100
+                  ? notice.title.substring(0, 100) + "..."
+                  : notice.title,
+                {
+                  type: "notice",
+                  notice_id: notice.id.toString(),
+                  action: "open_notice",
+                },
+                async (fcmToken: string) => {
+                  // 해당 토큰의 뱃지 수 반환
+                  const tokenData = validTokenData.find(
+                    (data) => data.fcmToken === fcmToken
+                  );
+                  return tokenData?.badgeCount || 0;
+                }
+              );
+
+              console.log(
+                `✅ 공지사항 푸시 알림 전송 완료: 성공 ${result.success}개, 실패 ${result.failure}개, 무효 토큰 ${result.invalidTokens.length}개`
+              );
+
+              // 무효한 토큰들을 데이터베이스에서 정리 (선택적)
+              if (result.invalidTokens.length > 0) {
+                console.log(
+                  `🧹 무효한 FCM 토큰 ${result.invalidTokens.length}개를 정리합니다.`
+                );
+
+                // 무효한 토큰들을 데이터베이스에서 NULL로 업데이트
+                for (const invalidToken of result.invalidTokens) {
+                  try {
+                    const cleanupConnection = await pool.getConnection();
+                    await cleanupConnection.query(
+                      "UPDATE users SET fcm_token = NULL WHERE fcm_token = ?",
+                      [invalidToken]
+                    );
+                    cleanupConnection.release();
+                    console.log(
+                      `🗑️  무효한 토큰 정리됨: ${invalidToken.substring(
+                        0,
+                        30
+                      )}...`
+                    );
+                  } catch (cleanupError) {
+                    console.error("토큰 정리 중 오류:", cleanupError);
+                  }
+                }
+              }
+            } catch (fcmError) {
+              console.error("❌ FCM 전송 중 오류:", fcmError);
+            }
+          });
+
+          console.log(
+            `📨 공지사항 생성 - ${validTokenData.length}명의 사용자에게 유효한 알림 예약됨`
+          );
+        } else {
+          console.log(
+            "⚠️  유효한 FCM 토큰이 없어 푸시 알림을 전송하지 않습니다."
+          );
+        }
       } else {
         console.log("ℹ️  FCM 토큰이 등록된 사용자가 없습니다.");
       }

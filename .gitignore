@@ -15,6 +15,9 @@ yarn-error.log*
 .env.test
 .next
 
+# Firebase 서비스 계정 키 (보안상 중요)
+Firebase.json
+
 # Node.js
 node_modules/
 dist/
