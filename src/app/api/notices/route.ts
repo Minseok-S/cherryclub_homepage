@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "../utils/db";
 import { verifyJwt } from "../utils/jwt";
+import { FCMService } from "../utils/firebase";
 
 // 인증 헤더 상수
 const AUTH_HEADER = "authorization";
@@ -122,7 +123,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  let connection;
+  let connection: any;
   try {
     connection = await pool.getConnection();
     await connection.beginTransaction();
@@ -170,7 +171,6 @@ export async function POST(request: NextRequest) {
     );
 
     await connection.commit();
-    connection.release();
 
     // 공지사항 객체 구성
     const notice = {
@@ -178,6 +178,112 @@ export async function POST(request: NextRequest) {
       image_urls: (imageRows as any[]).map((img) => img.image_url),
       is_liked: false,
     };
+
+    // FCM 토큰이 있는 모든 사용자에게 푸시 알림 전송
+    try {
+      // Firebase 초기화 상태 확인
+      if (!FCMService.isAvailable()) {
+        console.warn(
+          "⚠️  Firebase가 초기화되지 않았습니다. 푸시 알림을 건너뜁니다:",
+          FCMService.getInitializationError()
+        );
+        console.log(
+          "✅ 공지사항은 정상적으로 생성되었습니다. (푸시 알림 제외)"
+        );
+        connection.release();
+        return NextResponse.json({
+          success: true,
+          notice,
+          warning: "Firebase 초기화 실패로 푸시 알림이 전송되지 않았습니다.",
+        });
+      }
+
+      const [usersRows] = await connection.query(
+        "SELECT id, fcm_token FROM users WHERE fcm_token IS NOT NULL AND fcm_token != ''"
+      );
+
+      const users = usersRows as Array<{ id: string; fcm_token: string }>;
+
+      if (users.length > 0) {
+        // 각 사용자에게 알림 DB 레코드 생성 및 뱃지 수 관리
+        const notificationPromises = users.map(async (user) => {
+          // 알림 레코드 DB 저장
+          await connection.query(
+            `INSERT INTO notifications 
+             (user_id, title, message, type, related_id, created_at, is_read) 
+             VALUES (?, ?, ?, ?, ?, NOW(), 0)`,
+            [
+              user.id,
+              "새 공지사항",
+              notice.title.length > 50
+                ? notice.title.substring(0, 50) + "..."
+                : notice.title,
+              "notice",
+              notice.id,
+            ]
+          );
+
+          // 해당 사용자의 읽지 않은 알림 수 조회 (iOS 뱃지용)
+          const [unreadCountRows] = await connection.query(
+            "SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND is_read = 0",
+            [user.id]
+          );
+          const unreadCount = (unreadCountRows as any[])[0].count;
+
+          return {
+            fcmToken: user.fcm_token,
+            badgeCount: unreadCount,
+          };
+        });
+
+        const notificationData = await Promise.all(notificationPromises);
+
+        // 푸시 알림 전송 (백그라운드 작업으로 처리)
+        setImmediate(async () => {
+          try {
+            // FCM 토큰별로 개별 전송 (iOS 뱃지 수 개별 적용)
+            const sendPromises = notificationData.map(
+              ({ fcmToken, badgeCount }) =>
+                FCMService.sendToDevice(
+                  fcmToken,
+                  "새 공지사항",
+                  notice.title.length > 100
+                    ? notice.title.substring(0, 100) + "..."
+                    : notice.title,
+                  {
+                    type: "notice",
+                    notice_id: notice.id.toString(),
+                    action: "open_notice",
+                  },
+                  badgeCount
+                )
+            );
+
+            const results = await Promise.all(sendPromises);
+            const successCount = results.filter(Boolean).length;
+            console.log(
+              `✅ 공지사항 푸시 알림 전송 완료: ${successCount}/${notificationData.length}명에게 전송`
+            );
+          } catch (fcmError) {
+            console.error("❌ FCM 전송 중 오류:", fcmError);
+          }
+        });
+
+        console.log(
+          `📨 공지사항 생성 - ${users.length}명의 사용자에게 알림 예약됨`
+        );
+      } else {
+        console.log("ℹ️  FCM 토큰이 등록된 사용자가 없습니다.");
+      }
+    } catch (notificationError) {
+      console.error(
+        "❌ 알림 처리 중 오류 (공지사항 생성은 성공):",
+        notificationError
+      );
+      // 알림 처리 실패는 공지사항 생성 성공에 영향주지 않음
+    }
+
+    connection.release();
 
     return NextResponse.json({
       success: true,
