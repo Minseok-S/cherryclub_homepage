@@ -41,7 +41,7 @@ export async function GET(
     // 공지사항 상세 조회
     const [noticeRows] = await connection.query(
       `SELECT 
-        n.id, n.title, n.content, 
+        n.id, n.category, n.content, 
         n.created_at, n.updated_at, 
         n.view_count, n.like_count, 
         (SELECT COUNT(*) FROM notice_comments WHERE notice_id = n.id) AS comment_count,
@@ -95,7 +95,7 @@ export async function GET(
 /**
  * 공지사항 수정 API
  * PUT /api/notices/[id]
- * @param request - 요청 객체 (제목, 내용, 이미지 포함)
+ * @param request - 요청 객체 (카테고리, 내용, 이미지 포함)
  * @param context - 라우트 매개변수를 포함하는 컨텍스트 객체
  * @returns 수정된 공지사항 정보
  */
@@ -123,15 +123,24 @@ export async function PUT(
 
   // JSON 파싱 (Flutter에서 Firebase Storage URLs 전송)
   const body = await request.json();
-  const { title, content, image_urls, is_pinned } = body;
+  const { category, content, image_urls, is_pinned } = body;
 
   // 이미지 URLs (Firebase Storage에 이미 업로드된 상태)
   const imageUrls = image_urls || [];
 
-  // 제목 및 내용 유효성 검증
-  if (!title || !content) {
+  // 카테고리 및 내용 유효성 검증
+  if (!category || !content) {
     return NextResponse.json(
-      { error: "제목과 내용은 필수 항목입니다." },
+      { error: "카테고리와 내용은 필수 항목입니다." },
+      { status: 400 }
+    );
+  }
+
+  // 카테고리 유효성 검증 (Flutter와 동일한 값들)
+  const validCategories = ["campus", "region", "all"];
+  if (!validCategories.includes(category)) {
+    return NextResponse.json(
+      { error: "유효하지 않은 카테고리입니다." },
       { status: 400 }
     );
   }
@@ -169,8 +178,8 @@ export async function PUT(
 
     // 공지사항 수정
     await connection.query(
-      "UPDATE notices SET title = ?, content = ?, is_pinned = ?, updated_at = NOW() WHERE id = ?",
-      [title, content, is_pinned ? 1 : 0, id]
+      "UPDATE notices SET category = ?, content = ?, is_pinned = ?, updated_at = NOW() WHERE id = ?",
+      [category, content, is_pinned ? 1 : 0, id]
     );
 
     // 기존 이미지 모두 삭제 후 새로운 이미지 URLs로 교체
@@ -191,7 +200,7 @@ export async function PUT(
     // 수정된 공지사항 조회
     const [noticeRows] = await connection.query(
       `SELECT 
-        n.id, n.title, n.content, 
+        n.id, n.category, n.content, 
         n.created_at, n.updated_at, 
         n.view_count, n.like_count, 
         (SELECT COUNT(*) FROM notice_comments WHERE notice_id = n.id) AS comment_count,

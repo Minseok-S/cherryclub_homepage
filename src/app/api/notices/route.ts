@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
     // 공지사항 목록 조회 (최신순 정렬)
     const [noticesRows] = await connection.query(
       `SELECT 
-        n.id, n.title, LEFT(n.content, 200) AS content, 
+        n.id, n.category, LEFT(n.content, 200) AS content, 
         n.created_at, n.updated_at, 
         n.view_count, n.like_count, 
         (SELECT COUNT(*) FROM notice_comments WHERE notice_id = n.id) AS comment_count,
@@ -94,7 +94,7 @@ export async function GET(request: NextRequest) {
 /**
  * 공지사항 생성 API
  * POST /api/notices
- * @param request - 요청 객체 (제목, 내용, 이미지 포함)
+ * @param request - 요청 객체 (카테고리, 내용, 이미지 포함)
  * @returns 생성된 공지사항 정보
  */
 export async function POST(request: NextRequest) {
@@ -110,15 +110,24 @@ export async function POST(request: NextRequest) {
 
   // JSON 파싱 (Flutter에서 Firebase Storage URLs 전송)
   const body = await request.json();
-  const { title, content, image_urls, is_pinned } = body;
+  const { category, content, image_urls, is_pinned } = body;
 
   // 이미지 URLs (Firebase Storage에 이미 업로드된 상태)
   const imageUrls = image_urls || [];
 
-  // 제목 및 내용 유효성 검증
-  if (!title || !content) {
+  // 카테고리 및 내용 유효성 검증
+  if (!category || !content) {
     return NextResponse.json(
-      { error: "제목과 내용은 필수 항목입니다." },
+      { error: "카테고리와 내용은 필수 항목입니다." },
+      { status: 400 }
+    );
+  }
+
+  // 카테고리 유효성 검증 (Flutter와 동일한 값들)
+  const validCategories = ["campus", "region", "all"];
+  if (!validCategories.includes(category)) {
+    return NextResponse.json(
+      { error: "유효하지 않은 카테고리입니다." },
       { status: 400 }
     );
   }
@@ -130,8 +139,8 @@ export async function POST(request: NextRequest) {
 
     // 공지사항 생성
     const [result] = await connection.query(
-      "INSERT INTO notices (title, content, author_id, is_pinned) VALUES (?, ?, ?, ?)",
-      [title, content, userId, is_pinned ? 1 : 0]
+      "INSERT INTO notices (category, content, author_id, is_pinned) VALUES (?, ?, ?, ?)",
+      [category, content, userId, is_pinned ? 1 : 0]
     );
     const noticeId = (result as any).insertId;
 
@@ -149,7 +158,7 @@ export async function POST(request: NextRequest) {
     // 생성된 공지사항 조회
     const [noticeRows] = await connection.query(
       `SELECT 
-        n.id, n.title, n.content, 
+        n.id, n.category, n.content, 
         n.created_at, n.updated_at, 
         n.view_count, n.like_count, 
         (SELECT COUNT(*) FROM notice_comments WHERE notice_id = n.id) AS comment_count,
@@ -231,14 +240,14 @@ export async function POST(request: NextRequest) {
             // 알림 레코드 DB 저장
             await connection.query(
               `INSERT INTO notifications 
-               (user_id, title, message, type, related_id, created_at, is_read) 
-               VALUES (?, ?, ?, ?, ?, NOW(), 0)`,
+                 (user_id, title, message, type, related_id, created_at, is_read) 
+                 VALUES (?, ?, ?, ?, ?, NOW(), 0)`,
               [
                 user.id,
                 "새 공지사항",
-                notice.title.length > 50
-                  ? notice.title.substring(0, 50) + "..."
-                  : notice.title,
+                notice.content.length > 50
+                  ? notice.content.substring(0, 50) + "..."
+                  : notice.content,
                 "notice",
                 notice.id,
               ]
@@ -280,9 +289,9 @@ export async function POST(request: NextRequest) {
               const result = await FCMService.sendToMultipleDevices(
                 validTokenData.map((data) => data.fcmToken),
                 "새 공지사항",
-                notice.title.length > 100
-                  ? notice.title.substring(0, 100) + "..."
-                  : notice.title,
+                notice.content.length > 100
+                  ? notice.content.substring(0, 100) + "..."
+                  : notice.content,
                 {
                   type: "notice",
                   notice_id: notice.id.toString(),
