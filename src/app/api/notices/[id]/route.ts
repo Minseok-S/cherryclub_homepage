@@ -9,14 +9,15 @@ const AUTH_HEADER = "authorization";
  * 공지사항 상세 조회 API
  * GET /api/notices/[id]
  * @param request - NextRequest 객체
+ * @param context - 라우트 매개변수를 포함하는 컨텍스트 객체
  * @returns 공지사항 상세 정보
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    const { id } = await context.params;
     if (!id || isNaN(parseInt(id))) {
       return NextResponse.json(
         { error: "유효하지 않은 ID입니다." },
@@ -95,12 +96,12 @@ export async function GET(
  * 공지사항 수정 API
  * PUT /api/notices/[id]
  * @param request - 요청 객체 (제목, 내용, 이미지 포함)
- * @param params - URL 파라미터 (id)
+ * @param context - 라우트 매개변수를 포함하는 컨텍스트 객체
  * @returns 수정된 공지사항 정보
  */
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   // 인증 확인
   const authHeader = request.headers.get(AUTH_HEADER);
@@ -111,7 +112,7 @@ export async function PUT(
 
   const payload = verifyJwt(token);
   const userId = payload?.id;
-  const { id } = params;
+  const { id } = await context.params;
 
   if (!id || isNaN(parseInt(id))) {
     return NextResponse.json(
@@ -120,25 +121,12 @@ export async function PUT(
     );
   }
 
-  // FormData 파싱
-  const formData = await request.formData();
-  const title = formData.get("title") as string;
-  const content = formData.get("content") as string;
-  const isPinned = formData.get("is_pinned") === "true";
-  const existingImagesJson = formData.get("existing_images") as string;
-  let existingImages: string[] = [];
+  // JSON 파싱 (Flutter에서 Firebase Storage URLs 전송)
+  const body = await request.json();
+  const { title, content, image_urls, is_pinned } = body;
 
-  try {
-    existingImages = existingImagesJson ? JSON.parse(existingImagesJson) : [];
-  } catch (e) {
-    return NextResponse.json(
-      { error: "기존 이미지 목록 형식이 잘못되었습니다." },
-      { status: 400 }
-    );
-  }
-
-  // 새 이미지 파일들
-  const newImages = formData.getAll("new_images") as File[];
+  // 이미지 URLs (Firebase Storage에 이미 업로드된 상태)
+  const imageUrls = image_urls || [];
 
   // 제목 및 내용 유효성 검증
   if (!title || !content) {
@@ -182,48 +170,17 @@ export async function PUT(
     // 공지사항 수정
     await connection.query(
       "UPDATE notices SET title = ?, content = ?, is_pinned = ?, updated_at = NOW() WHERE id = ?",
-      [title, content, isPinned ? 1 : 0, id]
+      [title, content, is_pinned ? 1 : 0, id]
     );
 
-    // 기존 이미지 처리 (삭제된 이미지 제거)
-    const [currentImagesRows] = await connection.query(
-      "SELECT image_url FROM notice_images WHERE notice_id = ?",
-      [id]
-    );
+    // 기존 이미지 모두 삭제 후 새로운 이미지 URLs로 교체
+    await connection.query("DELETE FROM notice_images WHERE notice_id = ?", [
+      id,
+    ]);
 
-    const currentImages = (currentImagesRows as any[]).map(
-      (img) => img.image_url
-    );
-
-    // 삭제할 이미지 찾기
-    const imagesToDelete = currentImages.filter(
-      (imgUrl) => !existingImages.includes(imgUrl)
-    );
-
-    // 이미지 삭제
-    if (imagesToDelete.length > 0) {
-      for (const imageUrl of imagesToDelete) {
-        await connection.query(
-          "DELETE FROM notice_images WHERE notice_id = ? AND image_url = ?",
-          [id, imageUrl]
-        );
-
-        // 실제 파일 시스템에서 이미지 삭제 로직 (필요 시)
-        // await deleteImageFromStorage(imageUrl);
-      }
-    }
-
-    // 새 이미지 처리
-    if (newImages.length > 0) {
-      for (const image of newImages) {
-        const buffer = Buffer.from(await image.arrayBuffer());
-        // 이미지 저장 로직 (예시)
-        // const imageUrl = await uploadImageToStorage(buffer, image.name);
-
-        // 임시로 이미지 URL 생성
-        const imageUrl = `/uploads/notices/${id}/${image.name}`;
-
-        // 이미지 정보 DB 저장
+    // 새로운 이미지 URLs 저장 (Firebase Storage에 이미 업로드된 상태)
+    if (imageUrls.length > 0) {
+      for (const imageUrl of imageUrls) {
         await connection.query(
           "INSERT INTO notice_images (notice_id, image_url) VALUES (?, ?)",
           [id, imageUrl]
@@ -286,12 +243,12 @@ export async function PUT(
  * 공지사항 삭제 API
  * DELETE /api/notices/[id]
  * @param request - NextRequest 객체
- * @param params - URL 파라미터 (id)
+ * @param context - 라우트 매개변수를 포함하는 컨텍스트 객체
  * @returns 성공 여부
  */
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   // 인증 확인
   const authHeader = request.headers.get(AUTH_HEADER);
@@ -302,7 +259,7 @@ export async function DELETE(
 
   const payload = verifyJwt(token);
   const userId = payload?.id;
-  const { id } = params;
+  const { id } = await context.params;
 
   if (!id || isNaN(parseInt(id))) {
     return NextResponse.json(

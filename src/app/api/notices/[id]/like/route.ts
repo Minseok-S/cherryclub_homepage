@@ -9,12 +9,12 @@ const AUTH_HEADER = "authorization";
  * 공지사항 좋아요 토글 API
  * POST /api/notices/[id]/like
  * @param request - NextRequest 객체
- * @param params - URL 파라미터 (id)
+ * @param context - 라우트 매개변수를 포함하는 컨텍스트 객체
  * @returns 좋아요 상태 정보
  */
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   // 인증 확인
   const authHeader = request.headers.get(AUTH_HEADER);
@@ -25,7 +25,7 @@ export async function POST(
 
   const payload = verifyJwt(token);
   const userId = payload?.id;
-  const { id } = params;
+  const { id } = await context.params;
 
   if (!id || isNaN(parseInt(id))) {
     return NextResponse.json(

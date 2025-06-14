@@ -9,15 +9,15 @@ const AUTH_HEADER = "authorization";
  * 공지사항 댓글 목록 조회 API
  * GET /api/notices/[id]/comments
  * @param request - NextRequest 객체
- * @param params - URL 파라미터 (id)
+ * @param context - 라우트 매개변수를 포함하는 컨텍스트 객체
  * @returns 댓글 목록
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    const { id } = await context.params;
     if (!id || isNaN(parseInt(id))) {
       return NextResponse.json(
         { error: "유효하지 않은 ID입니다." },
@@ -103,12 +103,12 @@ export async function GET(
  * 공지사항 댓글 작성 API
  * POST /api/notices/[id]/comments
  * @param request - 요청 객체 (댓글 내용, 부모 댓글 ID 포함)
- * @param params - URL 파라미터 (id)
+ * @param context - 라우트 매개변수를 포함하는 컨텍스트 객체
  * @returns 생성된 댓글 정보
  */
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   // 인증 확인
   const authHeader = request.headers.get(AUTH_HEADER);
@@ -119,7 +119,7 @@ export async function POST(
 
   const payload = verifyJwt(token);
   const userId = payload?.id;
-  const { id } = params;
+  const { id } = await context.params;
 
   if (!id || isNaN(parseInt(id))) {
     return NextResponse.json(

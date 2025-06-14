@@ -9,12 +9,12 @@ const AUTH_HEADER = "authorization";
  * 댓글 수정 API
  * PATCH /api/comments/[id]
  * @param request - 요청 객체 (댓글 내용 포함)
- * @param params - URL 파라미터 (id)
+ * @param context - 라우트 매개변수를 포함하는 컨텍스트 객체
  * @returns 수정된 댓글 정보
  */
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   // 인증 확인
   const authHeader = request.headers.get(AUTH_HEADER);
@@ -25,7 +25,7 @@ export async function PATCH(
 
   const payload = verifyJwt(token);
   const userId = payload?.id;
-  const { id } = params;
+  const { id } = await context.params;
 
   if (!id || isNaN(parseInt(id))) {
     return NextResponse.json(
@@ -128,12 +128,12 @@ export async function PATCH(
  * 댓글 삭제 API
  * DELETE /api/comments/[id]
  * @param request - NextRequest 객체
- * @param params - URL 파라미터 (id)
+ * @param context - 라우트 매개변수를 포함하는 컨텍스트 객체
  * @returns 성공 여부
  */
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  context: { params: Promise<{ id: string }> }
 ) {
   // 인증 확인
   const authHeader = request.headers.get(AUTH_HEADER);
@@ -144,7 +144,7 @@ export async function DELETE(
 
   const payload = verifyJwt(token);
   const userId = payload?.id;
-  const { id } = params;
+  const { id } = await context.params;
 
   if (!id || isNaN(parseInt(id))) {
     return NextResponse.json(

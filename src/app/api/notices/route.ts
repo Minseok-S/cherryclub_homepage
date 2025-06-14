@@ -107,14 +107,12 @@ export async function POST(request: NextRequest) {
   const payload = verifyJwt(token);
   const userId = payload?.id;
 
-  // FormData 파싱
-  const formData = await request.formData();
-  const title = formData.get("title") as string;
-  const content = formData.get("content") as string;
-  const isPinned = formData.get("is_pinned") === "true";
+  // JSON 파싱 (Flutter에서 Firebase Storage URLs 전송)
+  const body = await request.json();
+  const { title, content, image_urls, is_pinned } = body;
 
-  // 이미지 파일들
-  const images = formData.getAll("images") as File[];
+  // 이미지 URLs (Firebase Storage에 이미 업로드된 상태)
+  const imageUrls = image_urls || [];
 
   // 제목 및 내용 유효성 검증
   if (!title || !content) {
@@ -132,22 +130,14 @@ export async function POST(request: NextRequest) {
     // 공지사항 생성
     const [result] = await connection.query(
       "INSERT INTO notices (title, content, author_id, is_pinned) VALUES (?, ?, ?, ?)",
-      [title, content, userId, isPinned ? 1 : 0]
+      [title, content, userId, is_pinned ? 1 : 0]
     );
     const noticeId = (result as any).insertId;
 
-    // 이미지 처리 (이미지가 있는 경우)
-    if (images.length > 0) {
-      // 이미지 저장 로직 (실제로는 이미지 업로드 서비스 사용 필요)
-      for (const image of images) {
-        const buffer = Buffer.from(await image.arrayBuffer());
-        // 이미지 저장 로직 (예시)
-        // const imageUrl = await uploadImageToStorage(buffer, image.name);
-
-        // 임시로 이미지 URL 생성
-        const imageUrl = `/uploads/notices/${noticeId}/${image.name}`;
-
-        // 이미지 정보 DB 저장
+    // 이미지 URLs 처리 (Firebase Storage에 이미 업로드된 이미지들)
+    if (imageUrls.length > 0) {
+      for (const imageUrl of imageUrls) {
+        // 이미지 URL을 notice_images 테이블에 저장
         await connection.query(
           "INSERT INTO notice_images (notice_id, image_url) VALUES (?, ?)",
           [noticeId, imageUrl]
