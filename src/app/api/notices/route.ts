@@ -296,6 +296,8 @@ export async function POST(request: NextRequest) {
                   type: "notice",
                   notice_id: notice.id.toString(),
                   action: "open_notice",
+                  category: notice.category,
+                  author_name: notice.author_name,
                 },
                 async (fcmToken: string) => {
                   // 해당 토큰의 뱃지 수 반환

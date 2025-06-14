@@ -40,7 +40,6 @@ export function signJwt(payload: object): string {
 export function verifyJwt(token: string): any | null {
   try {
     const decoded = jwt.verify(token, JWT_SECRET_KEY);
-    console.log(`JWT 토큰 검증 성공: ${JSON.stringify(decoded)}`);
     return decoded;
   } catch (err) {
     console.error("JWT 토큰 검증 실패:", err);
