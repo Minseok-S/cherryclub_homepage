@@ -25,6 +25,7 @@ export async function PATCH(
 
   const payload = verifyJwt(token);
   const userId = payload?.id;
+  const userAuthority = payload?.role;
   const { id } = await context.params;
 
   if (!id || isNaN(parseInt(id))) {
@@ -67,8 +68,12 @@ export async function PATCH(
     }
 
     const authorId = (commentRows as any[])[0].author_id;
-    // 작성자만 수정 가능 (관리자 권한 확인 로직 추가 가능)
-    if (authorId !== userId) {
+
+    // 권한 확인: 작성자이거나 관리자(권한 4 이하)
+    const isAdmin = userAuthority !== null && userAuthority <= 4;
+    const isAuthor = authorId === userId;
+
+    if (!isAuthor && !isAdmin) {
       await connection.rollback();
       connection.release();
       return NextResponse.json(
@@ -144,6 +149,7 @@ export async function DELETE(
 
   const payload = verifyJwt(token);
   const userId = payload?.id;
+  const userAuthority = payload?.role;
   const { id } = await context.params;
 
   if (!id || isNaN(parseInt(id))) {
@@ -176,8 +182,12 @@ export async function DELETE(
     const authorId = (commentRows as any[])[0].author_id;
     const parentId = (commentRows as any[])[0].parent_id;
 
-    // 작성자만 삭제 가능 (관리자 권한 확인 로직 추가 가능)
-    if (authorId !== userId) {
+    // 권한 확인: 작성자이거나 관리자(권한 4 이하)
+    const isAdmin = userAuthority !== null && userAuthority <= 4;
+    const isAuthor = authorId === userId;
+
+    if (!isAuthor && !isAdmin) {
+      console.log("권한 없음 - 403 반환");
       await connection.rollback();
       connection.release();
       return NextResponse.json(
@@ -185,6 +195,8 @@ export async function DELETE(
         { status: 403 }
       );
     }
+
+    console.log("권한 확인 통과 - 삭제 진행");
 
     // 대댓글이 있는지 확인 (최상위 댓글인 경우)
     if (parentId === null) {
