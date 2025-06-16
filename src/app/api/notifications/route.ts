@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "../utils/db";
 import { verifyJwt } from "../utils/jwt";
+import { FCMService } from "../utils/firebase";
 
 // 인증 헤더 상수
 const AUTH_HEADER = "authorization";
@@ -85,9 +86,9 @@ export async function GET(request: NextRequest) {
 }
 
 /**
- * FCM 토큰 업데이트 API
- * POST /api/notifications/fcm-token
- * @param request - 요청 객체 (FCM 토큰 포함)
+ * 알림 생성 API
+ * POST /api/notifications
+ * @param request - 요청 객체 (알림 데이터 포함)
  * @returns 성공 여부
  */
 export async function POST(request: NextRequest) {
@@ -103,12 +104,31 @@ export async function POST(request: NextRequest) {
 
   // 요청 본문 파싱
   const body = await request.json();
-  const { fcm_token } = body;
+  console.log("📥 알림 생성 API 요청:", body);
 
-  // FCM 토큰 유효성 검증
-  if (!fcm_token) {
+  // 알림 생성 요청 처리
+  const { recipient_id, title, message, type, related_id } = body;
+
+  // 필수 필드 유효성 검증
+  if (!recipient_id || !title || !message || !type) {
+    console.error("❌ 알림 생성 필수 필드 누락:", {
+      recipient_id,
+      title,
+      message,
+      type,
+    });
     return NextResponse.json(
-      { error: "FCM 토큰은 필수 항목입니다." },
+      { error: "recipient_id, title, message, type은 필수 항목입니다." },
+      { status: 400 }
+    );
+  }
+
+  // 타입 유효성 검증
+  const validTypes = ["like", "comment", "reply", "testimony", "system"];
+  if (!validTypes.includes(type)) {
+    console.error("❌ 유효하지 않은 알림 타입:", type);
+    return NextResponse.json(
+      { error: "유효하지 않은 알림 타입입니다." },
       { status: 400 }
     );
   }
@@ -117,23 +137,172 @@ export async function POST(request: NextRequest) {
   try {
     connection = await pool.getConnection();
 
-    // FCM 토큰 업데이트
-    await connection.query("UPDATE users SET fcm_token = ? WHERE id = ?", [
-      fcm_token,
-      userId,
-    ]);
+    // 수신자 존재 여부 확인
+    const [userRows] = await connection.query(
+      "SELECT id FROM users WHERE id = ?",
+      [recipient_id]
+    );
+
+    if ((userRows as any[]).length === 0) {
+      connection.release();
+      console.error("❌ 존재하지 않는 수신자:", recipient_id);
+      return NextResponse.json(
+        { error: "존재하지 않는 수신자입니다." },
+        { status: 404 }
+      );
+    }
+
+    // 자기 자신에게 알림 생성 방지 (클라이언트에서도 체크하지만 서버에서도 체크)
+    if (parseInt(recipient_id) === userId) {
+      connection.release();
+      console.log("ℹ️ 자기 자신에게 알림 생성 스킵");
+      return NextResponse.json({
+        success: true,
+        message: "자기 자신에게는 알림을 보내지 않습니다.",
+      });
+    }
+
+    // 발신자 정보 조회
+    const [senderRows] = await connection.query(
+      "SELECT id, name FROM users WHERE id = ?",
+      [userId]
+    );
+
+    const senderName = (senderRows as any[])[0]?.name || "알 수 없는 사용자";
+
+    // 알림 생성
+    await connection.query(
+      `INSERT INTO notifications 
+       (user_id, title, message, type, related_id, sender_id, sender_name, is_read, created_at) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, 0, NOW())`,
+      [
+        recipient_id,
+        title,
+        message,
+        type,
+        related_id || null,
+        userId,
+        senderName,
+      ]
+    );
+
+    // 수신자의 FCM 토큰 조회
+    const [recipientRows] = await connection.query(
+      "SELECT fcm_token FROM users WHERE id = ? AND fcm_token IS NOT NULL AND fcm_token != ''",
+      [recipient_id]
+    );
+
+    // 수신자의 읽지 않은 알림 수 조회 (iOS 뱃지용)
+    const [unreadCountRows] = await connection.query(
+      "SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND is_read = 0",
+      [recipient_id]
+    );
+    const unreadCount = (unreadCountRows as any[])[0].count;
 
     connection.release();
 
+    console.log("✅ 알림 생성 성공:", {
+      recipient_id,
+      sender: senderName,
+      type,
+      title,
+    });
+
+    // FCM 푸쉬 알림 전송 (백그라운드 작업으로 처리)
+    if ((recipientRows as any[]).length > 0) {
+      const recipientFcmToken = (recipientRows as any[])[0].fcm_token;
+
+      // 백그라운드에서 푸쉬 알림 전송
+      setImmediate(async () => {
+        try {
+          // Firebase 초기화 상태 확인
+          if (!FCMService.isAvailable()) {
+            console.warn(
+              "⚠️  Firebase가 초기화되지 않았습니다. 푸쉬 알림을 건너뜁니다:",
+              FCMService.getInitializationError()
+            );
+            return;
+          }
+
+          console.log(
+            `📤 FCM 푸쉬 알림 전송 시작: ${recipientFcmToken.substring(
+              0,
+              20
+            )}...`
+          );
+
+          // 알림 타입에 따른 추가 데이터 구성
+          const notificationData: Record<string, string> = {
+            type,
+            action: "open_notification",
+            sender_name: senderName,
+          };
+
+          // 관련 ID가 있는 경우 추가
+          if (related_id) {
+            notificationData.related_id = related_id;
+
+            // 타입별 액션 설정
+            if (type === "like" || type === "comment") {
+              if (related_id.includes("testimony")) {
+                notificationData.action = "open_testimony";
+                notificationData.testimony_id = related_id;
+              } else {
+                notificationData.action = "open_notice";
+                notificationData.notice_id = related_id;
+              }
+            }
+          }
+
+          const success = await FCMService.sendToDevice(
+            recipientFcmToken,
+            title,
+            message,
+            notificationData,
+            unreadCount
+          );
+
+          if (success) {
+            console.log(
+              `✅ FCM 푸쉬 알림 전송 성공: ${recipientFcmToken.substring(
+                0,
+                20
+              )}...`
+            );
+          } else {
+            console.log(
+              `❌ FCM 푸쉬 알림 전송 실패: ${recipientFcmToken.substring(
+                0,
+                20
+              )}...`
+            );
+          }
+        } catch (fcmError) {
+          console.error("❌ FCM 전송 중 오류:", fcmError);
+        }
+      });
+
+      console.log(
+        `📨 알림 생성 완료 - 푸쉬 알림 전송 예약됨 (토큰: ${recipientFcmToken.substring(
+          0,
+          20
+        )}...)`
+      );
+    } else {
+      console.log(
+        `ℹ️  수신자(${recipient_id})의 FCM 토큰이 없어 푸쉬 알림을 전송하지 않습니다.`
+      );
+    }
+
     return NextResponse.json({
       success: true,
-      message: "FCM 토큰이 업데이트되었습니다.",
+      message: "알림이 생성되었습니다.",
     });
   } catch (error) {
-    console.error("FCM 토큰 업데이트 오류:", error);
+    console.error("알림 생성 오류:", error);
     if (connection) connection.release();
     return NextResponse.json(
-      { error: "FCM 토큰 업데이트에 실패했습니다." },
+      { error: "알림 생성에 실패했습니다." },
       { status: 500 }
     );
   }
