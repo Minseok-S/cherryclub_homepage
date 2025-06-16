@@ -111,6 +111,7 @@ export async function PUT(
 
   const payload = verifyJwt(token);
   const userId = payload?.id;
+  const userAuthority = payload?.role;
   const { id } = await context.params;
 
   if (!id || isNaN(parseInt(id))) {
@@ -156,8 +157,12 @@ export async function PUT(
     }
 
     const authorId = (authorRows as any[])[0].author_id;
-    // 작성자만 수정 가능 (관리자 권한 확인 로직 추가 가능)
-    if (authorId !== userId) {
+
+    // 권한 확인: 작성자이거나 관리자(권한 4 이하)
+    const isAuthor = authorId === userId;
+    const isAdmin = userAuthority !== null && userAuthority <= 4;
+
+    if (!isAuthor && !isAdmin) {
       await connection.rollback();
       connection.release();
       return NextResponse.json(
@@ -258,6 +263,7 @@ export async function DELETE(
 
   const payload = verifyJwt(token);
   const userId = payload?.id;
+  const userAuthority = payload?.role;
   const { id } = await context.params;
 
   if (!id || isNaN(parseInt(id))) {
@@ -288,8 +294,12 @@ export async function DELETE(
     }
 
     const authorId = (authorRows as any[])[0].author_id;
-    // 작성자만 삭제 가능 (관리자 권한 확인 로직 추가 가능)
-    if (authorId !== userId) {
+
+    // 권한 확인: 작성자이거나 관리자(권한 4 이하)
+    const isAuthor = authorId === userId;
+    const isAdmin = userAuthority !== null && userAuthority <= 4;
+
+    if (!isAuthor && !isAdmin) {
       await connection.rollback();
       connection.release();
       return NextResponse.json(
