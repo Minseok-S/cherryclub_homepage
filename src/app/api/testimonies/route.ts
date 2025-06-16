@@ -8,21 +8,36 @@ const AUTH_HEADER = "authorization";
 
 /**
  * 간증 목록 조회 API
- * GET /api/testimonies?page=1&page_size=10
+ * GET /api/testimonies?page=1&page_size=10&category=campus
  * @param request - NextRequest 객체
  * @returns 간증 목록
+ *
+ * @description
+ * Frontend Design Guideline 적용:
+ * - Predictability: 공지사항과 동일한 구조로 일관된 응답 형식
+ * - Cohesion: 카테고리 관련 기능을 함께 관리
  */
 export async function GET(request: NextRequest) {
   try {
-    // 페이지네이션 파라미터
+    // 페이지네이션 및 필터링 파라미터
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get("page") || "1");
     const pageSize = parseInt(searchParams.get("page_size") || "10");
+    const category = searchParams.get("category"); // 카테고리 필터
 
     // 페이지 및 사이즈 유효성 검증
     if (isNaN(page) || isNaN(pageSize) || page < 1 || pageSize < 1) {
       return NextResponse.json(
         { error: "유효하지 않은 페이지 파라미터입니다." },
+        { status: 400 }
+      );
+    }
+
+    // 카테고리 유효성 검증 (Flutter와 동일한 값들)
+    const validCategories = ["campus", "camp", "meeting", "etc"];
+    if (category && !validCategories.includes(category)) {
+      return NextResponse.json(
+        { error: "유효하지 않은 카테고리입니다." },
         { status: 400 }
       );
     }
@@ -37,10 +52,19 @@ export async function GET(request: NextRequest) {
     // 페이징 처리를 위한 offset 계산
     const offset = (page - 1) * pageSize;
 
-    // 간증 목록 조회 (최신순 정렬)
-    const [testimoniesRows] = await connection.query(
+    // 쿼리 조건 구성
+    let whereClause = "";
+    let queryParams: any[] = [userId || 0];
+
+    if (category) {
+      whereClause = "WHERE t.category = ?";
+      queryParams.push(category);
+    }
+
+    // 간증 목록 조회 (최신순 정렬, 카테고리 포함)
+    const [testimonyRows] = await connection.query(
       `SELECT 
-        t.id, LEFT(t.content, 200) AS content, 
+        t.id, t.category, LEFT(t.content, 200) AS content, 
         t.created_at, t.updated_at, 
         t.view_count, t.like_count, 
         (SELECT COUNT(*) FROM testimony_comments WHERE testimony_id = t.id) AS comment_count,
@@ -50,14 +74,17 @@ export async function GET(request: NextRequest) {
       FROM testimonies t
       JOIN users u ON t.author_id = u.id
       LEFT JOIN Universities univ ON u.universe_id = univ.id
+      ${whereClause}
       ORDER BY t.created_at DESC
       LIMIT ? OFFSET ?`,
-      [userId || 0, pageSize, offset]
+      category
+        ? [...queryParams, pageSize, offset]
+        : [userId || 0, pageSize, offset]
     );
 
     // 각 간증에 대한 이미지 조회
     const testimonies = [];
-    for (const testimony of testimoniesRows as any[]) {
+    for (const testimony of testimonyRows as any[]) {
       const [imageRows] = await connection.query(
         "SELECT image_url FROM testimony_images WHERE testimony_id = ?",
         [testimony.id]
@@ -93,8 +120,13 @@ export async function GET(request: NextRequest) {
 /**
  * 간증 생성 API
  * POST /api/testimonies
- * @param request - 요청 객체 (내용, 이미지 포함)
+ * @param request - 요청 객체 (카테고리, 내용, 이미지 포함)
  * @returns 생성된 간증 정보
+ *
+ * @description
+ * Frontend Design Guideline 적용:
+ * - Single Responsibility: 간증 생성만 담당
+ * - Predictability: 공지사항과 동일한 구조로 일관된 처리
  */
 export async function POST(request: NextRequest) {
   // 인증 확인
@@ -109,15 +141,24 @@ export async function POST(request: NextRequest) {
 
   // JSON 파싱 (Flutter에서 Firebase Storage URLs 전송)
   const body = await request.json();
-  const { content, image_urls } = body;
+  const { category, content, image_urls } = body;
 
   // 이미지 URLs (Firebase Storage에 이미 업로드된 상태)
   const imageUrls = image_urls || [];
 
-  // 내용 유효성 검증
-  if (!content) {
+  // 카테고리 및 내용 유효성 검증
+  if (!category || !content) {
     return NextResponse.json(
-      { error: "내용은 필수 항목입니다." },
+      { error: "카테고리와 내용은 필수 항목입니다." },
+      { status: 400 }
+    );
+  }
+
+  // 카테고리 유효성 검증 (Flutter와 동일한 값들)
+  const validCategories = ["campus", "camp", "meeting", "etc"];
+  if (!validCategories.includes(category)) {
+    return NextResponse.json(
+      { error: "유효하지 않은 카테고리입니다." },
       { status: 400 }
     );
   }
@@ -127,10 +168,10 @@ export async function POST(request: NextRequest) {
     connection = await pool.getConnection();
     await connection.beginTransaction();
 
-    // 간증 생성
+    // 간증 생성 (카테고리 포함)
     const [result] = await connection.query(
-      "INSERT INTO testimonies (content, author_id) VALUES (?, ?)",
-      [content, userId]
+      "INSERT INTO testimonies (category, content, author_id) VALUES (?, ?, ?)",
+      [category, content, userId]
     );
     const testimonyId = (result as any).insertId;
 
@@ -148,7 +189,7 @@ export async function POST(request: NextRequest) {
     // 생성된 간증 조회
     const [testimonyRows] = await connection.query(
       `SELECT 
-        t.id, t.content, 
+        t.id, t.category, t.content, 
         t.created_at, t.updated_at, 
         t.view_count, t.like_count, 
         (SELECT COUNT(*) FROM testimony_comments WHERE testimony_id = t.id) AS comment_count,
@@ -169,6 +210,7 @@ export async function POST(request: NextRequest) {
     );
 
     await connection.commit();
+    connection.release();
 
     // 간증 객체 구성
     const testimony = {
@@ -186,7 +228,6 @@ export async function POST(request: NextRequest) {
           FCMService.getInitializationError()
         );
         console.log("✅ 간증이 정상적으로 생성되었습니다. (푸시 알림 제외)");
-        connection.release();
         return NextResponse.json({
           success: true,
           testimony,
@@ -347,8 +388,6 @@ export async function POST(request: NextRequest) {
       );
       // 알림 처리 실패는 간증 생성 성공에 영향주지 않음
     }
-
-    connection.release();
 
     return NextResponse.json({
       success: true,

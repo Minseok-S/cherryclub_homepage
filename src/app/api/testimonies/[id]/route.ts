@@ -11,6 +11,11 @@ const AUTH_HEADER = "authorization";
  * @param request - NextRequest 객체
  * @param context - 라우트 매개변수를 포함하는 컨텍스트 객체
  * @returns 간증 상세 정보
+ *
+ * @description
+ * Frontend Design Guideline 적용:
+ * - Predictability: 공지사항과 동일한 구조로 일관된 응답 형식
+ * - Single Responsibility: 간증 상세 조회만 담당
  */
 export async function GET(
   request: NextRequest,
@@ -38,10 +43,10 @@ export async function GET(
       [id]
     );
 
-    // 간증 상세 조회
+    // 간증 상세 조회 (카테고리 포함)
     const [testimonyRows] = await connection.query(
       `SELECT 
-        t.id, t.content, 
+        t.id, t.category, t.content, 
         t.created_at, t.updated_at, 
         t.view_count, t.like_count, 
         (SELECT COUNT(*) FROM testimony_comments WHERE testimony_id = t.id) AS comment_count,
@@ -94,9 +99,14 @@ export async function GET(
 /**
  * 간증 수정 API
  * PUT /api/testimonies/[id]
- * @param request - 요청 객체 (내용, 이미지 포함)
+ * @param request - 요청 객체 (카테고리, 내용, 이미지 포함)
  * @param context - 라우트 매개변수를 포함하는 컨텍스트 객체
  * @returns 수정된 간증 정보
+ *
+ * @description
+ * Frontend Design Guideline 적용:
+ * - Single Responsibility: 간증 수정만 담당
+ * - Predictability: 공지사항과 동일한 구조로 일관된 처리
  */
 export async function PUT(
   request: NextRequest,
@@ -123,15 +133,24 @@ export async function PUT(
 
   // JSON 파싱 (Flutter에서 Firebase Storage URLs 전송)
   const body = await request.json();
-  const { content, image_urls } = body;
+  const { category, content, image_urls } = body;
 
   // 이미지 URLs (Firebase Storage에 이미 업로드된 상태)
   const imageUrls = image_urls || [];
 
-  // 내용 유효성 검증
-  if (!content) {
+  // 카테고리 및 내용 유효성 검증
+  if (!category || !content) {
     return NextResponse.json(
-      { error: "내용은 필수 항목입니다." },
+      { error: "카테고리와 내용은 필수 항목입니다." },
+      { status: 400 }
+    );
+  }
+
+  // 카테고리 유효성 검증 (Flutter와 동일한 값들)
+  const validCategories = ["campus", "camp", "meeting", "etc"];
+  if (!validCategories.includes(category)) {
+    return NextResponse.json(
+      { error: "유효하지 않은 카테고리입니다." },
       { status: 400 }
     );
   }
@@ -171,10 +190,10 @@ export async function PUT(
       );
     }
 
-    // 간증 수정
+    // 간증 수정 (카테고리 포함)
     await connection.query(
-      "UPDATE testimonies SET content = ?, updated_at = NOW() WHERE id = ?",
-      [content, id]
+      "UPDATE testimonies SET category = ?, content = ?, updated_at = NOW() WHERE id = ?",
+      [category, content, id]
     );
 
     // 기존 이미지 모두 삭제 후 새로운 이미지 URLs로 교체
@@ -193,10 +212,10 @@ export async function PUT(
       }
     }
 
-    // 수정된 간증 조회
+    // 수정된 간증 조회 (카테고리 포함)
     const [testimonyRows] = await connection.query(
       `SELECT 
-        t.id, t.content, 
+        t.id, t.category, t.content, 
         t.created_at, t.updated_at, 
         t.view_count, t.like_count, 
         (SELECT COUNT(*) FROM testimony_comments WHERE testimony_id = t.id) AS comment_count,
@@ -249,6 +268,11 @@ export async function PUT(
  * @param request - NextRequest 객체
  * @param context - 라우트 매개변수를 포함하는 컨텍스트 객체
  * @returns 성공 여부
+ *
+ * @description
+ * Frontend Design Guideline 적용:
+ * - Single Responsibility: 간증 삭제만 담당
+ * - Predictability: 일관된 에러 처리와 응답 구조
  */
 export async function DELETE(
   request: NextRequest,
