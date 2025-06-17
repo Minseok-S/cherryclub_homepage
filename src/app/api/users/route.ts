@@ -39,7 +39,7 @@ export async function GET(request: Request) {
         univ.name AS university,
         u.major, u.student_id, u.grade, u.semester, u.enrollment_status,
         u.vision_camp_batch, u.ministry_status, u.is_cherry_club_member,
-        u.created_at, u.isCampusLeader
+        u.created_at, u.isCampusLeader, u.isBranchLeader, u.isGroupLeader
       FROM users u
       LEFT JOIN Universities univ ON u.universe_id = univ.id
       LEFT JOIN region_groups rg ON u.region_group_id = rg.id
@@ -67,6 +67,8 @@ export async function GET(request: Request) {
       is_cherry_club_member: number;
       created_at: string;
       isCampusLeader: number;
+      isBranchLeader: number;
+      isGroupLeader: number;
     }>;
 
     return NextResponse.json({ users });
@@ -81,8 +83,8 @@ export async function GET(request: Request) {
 
 /**
  * @function PATCH
- * @description 여러 명의 유저 권한/캠퍼스 리더 정보를 한 번에 수정합니다.
- * @param {Object} req - { updates: Array<{ id: number, authority?: number, isCampusLeader?: number }> }
+ * @description 여러 명의 유저 권한/리더 정보를 한 번에 수정합니다.
+ * @param {Object} req - { updates: Array<{ id: number, authority?: number, isCampusLeader?: number, isBranchLeader?: number, isGroupLeader?: number }> }
  * @returns {Object} { results: Array<{ id: number, success: boolean, reason?: string }> }
  * @example
  * fetch('/api/users', {
@@ -90,8 +92,8 @@ export async function GET(request: Request) {
  *   headers: { 'Content-Type': 'application/json' },
  *   body: JSON.stringify({
  *     updates: [
- *       { id: 1, authority: 1, isCampusLeader: 0 },
- *       { id: 2, authority: 0, isCampusLeader: 1 }
+ *       { id: 1, authority: 1, isCampusLeader: 0, isBranchLeader: 1, isGroupLeader: 0 },
+ *       { id: 2, authority: 0, isCampusLeader: 1, isBranchLeader: 0, isGroupLeader: 1 }
  *     ]
  *   })
  * })
@@ -99,7 +101,12 @@ export async function GET(request: Request) {
  *   .then(data => console.log(data.results));
  */
 export async function PATCH(request: Request) {
-  const UPDATE_FIELDS = ["authority", "isCampusLeader"];
+  const UPDATE_FIELDS = [
+    "authority",
+    "isCampusLeader",
+    "isBranchLeader",
+    "isGroupLeader",
+  ];
   const AUTH_HEADER = "authorization";
   let connection;
   try {
