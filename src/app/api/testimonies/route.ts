@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
 
     // 쿼리 조건 구성
     let whereClause = "";
-    let queryParams: any[] = [userId || 0];
+    const queryParams: any[] = [userId || 0];
 
     if (category) {
       whereClause = "WHERE t.category = ?";
