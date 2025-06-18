@@ -97,7 +97,7 @@ export async function GET(
       university_name: member.university_name,
       is_group_leader: !!member.isGroupLeader,
       is_branch_leader: !!member.isBranchLeader,
-      is_cherry_club_member: !!member.is_cherry_club_member,
+      is_cherry_club_member: member.is_cherry_club_member,
     }));
 
     return NextResponse.json({
