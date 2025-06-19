@@ -44,8 +44,8 @@ async function sendVerificationEmail(
   await transporter.sendMail({
     from: '"NCMN 대학캠퍼스" <bbb9316@naver.com>',
     to: email,
-    subject: "[NCMN 대학캠퍼스] 비밀번호 변경 인증번호",
-    text: `비밀번호 변경 인증번호: ${code}`,
+    subject: "[NCMN 대학캠퍼스] 본인인증 인증번호",
+    text: `본인인증 인증번호: ${code}`,
   });
 }
 
@@ -58,33 +58,51 @@ async function sendVerificationEmail(
  *   fetch('/api/auth/send-email-code', { method: 'POST', body: JSON.stringify({ email: 'test@example.com' }) })
  */
 export async function POST(req: NextRequest) {
+  console.log("📧 [API 호출] 인증번호 발송 API 시작됨");
   let connection;
   try {
     const { email } = await req.json();
+    console.log(`📧 [요청 데이터] 이메일: ${email}`);
+
     if (!email || typeof email !== "string") {
+      console.log("📧 [에러] 이메일 누락 또는 타입 오류");
       return NextResponse.json(
         { error: "이메일이 필요합니다." },
         { status: 400 }
       );
     }
     const code = generateVerificationCode(VERIFICATION_CODE_LENGTH);
+    console.log(`📧 인증번호 생성: ${email} -> ${code}`);
+
+    console.log("📧 [이메일 발송] 시작...");
     await sendVerificationEmail(email, code);
+    console.log("📧 [이메일 발송] 완료");
 
     connection = await pool.getConnection();
+    console.log("📧 [DB 연결] 성공");
+
     // 기존 인증번호 삭제
     await connection.query(
       "DELETE FROM email_verification_codes WHERE email = ?",
       [email]
     );
+    console.log(`📧 기존 인증번호 삭제 완료: ${email}`);
+
     // 새 인증번호 저장 (5분 유효)
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
     await connection.query(
       "INSERT INTO email_verification_codes (email, code, expires_at) VALUES (?, ?, ?)",
       [email, code, expiresAt]
     );
+    console.log(
+      `📧 새 인증번호 저장 완료: ${email} -> ${code}, 만료시간: ${expiresAt}`
+    );
+
     connection.release();
+    console.log("📧 [API 완료] 인증번호 발송 성공");
     return NextResponse.json({ ok: true, code });
   } catch (error: any) {
+    console.log("📧 [API 에러] 인증번호 발송 실패:", error.message);
     if (connection) connection.release();
     return NextResponse.json(
       { error: error.message || "인증번호 전송 실패" },

@@ -13,6 +13,8 @@ export async function POST(req: NextRequest) {
   let connection;
   try {
     const { email, code } = await req.json();
+    console.log(`🔐 인증번호 검증 시작: ${email} -> ${code}`);
+
     if (!email || !code) {
       return NextResponse.json(
         { ok: false, reason: "이메일과 인증번호가 필요합니다." },
@@ -20,11 +22,21 @@ export async function POST(req: NextRequest) {
       );
     }
     connection = await pool.getConnection();
+
+    // 해당 이메일의 모든 인증번호 조회 (디버깅용)
+    const [allRows] = await connection.query(
+      "SELECT * FROM email_verification_codes WHERE email = ?",
+      [email]
+    );
+    console.log(`🔐 해당 이메일의 저장된 인증번호들:`, allRows);
+
     const [rows] = await connection.query(
       "SELECT * FROM email_verification_codes WHERE email = ? AND code = ?",
       [email, code]
     );
     const record = (rows as any[])[0];
+    console.log(`🔐 검증 결과:`, record);
+
     if (!record) {
       connection.release();
       return NextResponse.json(
