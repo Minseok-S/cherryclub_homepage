@@ -170,10 +170,14 @@ export async function PATCH(
     }
 
     if (phone !== undefined) {
-      // 전화번호 중복 검사
+      // 전화번호 정규화 (하이픈 제거)
+      const normalizePhone = (p: string) => p.replace(/[^0-9]/g, "");
+      const cleanPhone = normalizePhone(phone);
+
+      // 전화번호 중복 검사 - DB에 하이픈 포함/제외 모든 형식으로 저장될 수 있으므로 양쪽 모두 확인
       const [phoneCheckRows] = await connection.query(
-        "SELECT id FROM users WHERE phone = ? AND id != ?",
-        [phone, targetUserId]
+        "SELECT id FROM users WHERE (REPLACE(phone, '-', '') = ? OR phone = ?) AND id != ?",
+        [cleanPhone, cleanPhone, targetUserId]
       );
 
       if ((phoneCheckRows as any[]).length > 0) {

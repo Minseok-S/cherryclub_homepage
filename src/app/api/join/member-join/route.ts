@@ -13,6 +13,7 @@ export async function POST(request: Request) {
       "gender",
       "phone",
       "birthday",
+      "email", // 이메일 필수 필드 추가
       "universe_id",
       "major",
       "student_id",
@@ -32,10 +33,14 @@ export async function POST(request: Request) {
       );
     }
 
-    // 전화번호 중복 체크
+    // 전화번호 정규화 (하이픈 제거)
+    const normalizePhone = (p: string) => p.replace(/[^0-9]/g, "");
+    const cleanPhone = normalizePhone(data.phone);
+
+    // 전화번호 중복 체크 - DB에 하이픈 포함/제외 모든 형식으로 저장될 수 있으므로 양쪽 모두 확인
     const [existingUser] = (await connection.query(
-      "SELECT id FROM Applications WHERE phone = ?",
-      [data.phone]
+      "SELECT id FROM Applications WHERE REPLACE(phone, '-', '') = ? OR phone = ?",
+      [cleanPhone, cleanPhone]
     )) as [mysql.RowDataPacket[], mysql.FieldPacket[]];
 
     if ((existingUser as mysql.RowDataPacket[])[0]) {
@@ -57,6 +62,7 @@ export async function POST(request: Request) {
       data.gender,
       data.phone,
       data.birthday,
+      data.email, // 인증된 이메일 추가
       data.universe_id,
       data.major,
       data.student_id,
@@ -76,6 +82,7 @@ export async function POST(request: Request) {
         gender = ?, 
         phone = ?,
         birthday = ?, 
+        email = ?, 
         universe_id = ?, 
         major = ?, 
         student_id = ?,

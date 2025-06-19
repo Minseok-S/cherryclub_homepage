@@ -1,3 +1,49 @@
+# API 문서
+
+## Authentication & Security APIs
+
+### 1. 사용자 정보 검증 API (비밀번호 찾기용)
+
+#### POST `/api/auth/verify-user-info`
+
+**Description**: 비밀번호 찾기 시 전화번호와 이메일이 동일한 사용자의 것인지 검증합니다.
+
+**Request Body**:
+
+```json
+{
+  "phone": "01012345678",
+  "email": "user@example.com"
+}
+```
+
+**Response Example (성공)**:
+
+```json
+{
+  "success": true,
+  "message": "사용자 정보가 확인되었습니다.",
+  "userName": "김철수"
+}
+```
+
+**Response Example (실패)**:
+
+```json
+{
+  "success": false,
+  "error": "입력하신 전화번호와 이메일이 일치하는 사용자를 찾을 수 없습니다."
+}
+```
+
+**Error Codes**:
+
+- `400`: 필수 필드 누락
+- `404`: 일치하는 사용자 없음
+- `500`: 서버 내부 오류
+
+---
+
 # 간증 카테고리 API 문서
 
 ## Frontend Design Guidelines 적용

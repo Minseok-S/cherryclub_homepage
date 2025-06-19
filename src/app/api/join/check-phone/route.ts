@@ -30,13 +30,17 @@ export async function POST(req: NextRequest) {
   // 요청 body 파싱
   const { phone } = await req.json();
 
+  // 전화번호 정규화 (하이픈 제거)
+  const normalizePhone = (p: string) => p.replace(/[^0-9]/g, "");
+  const cleanPhone = normalizePhone(phone);
+
   // DB 연결
   const connection = await pool.getConnection();
 
-  // 핸드폰 번호 중복 확인 쿼리
+  // 핸드폰 번호 중복 확인 쿼리 - DB에 하이픈 포함/제외 모든 형식으로 저장될 수 있으므로 양쪽 모두 확인
   const [rows] = await connection.query<RowDataPacket[]>(
-    "SELECT id FROM users WHERE phone = ?",
-    [phone]
+    "SELECT id FROM users WHERE REPLACE(phone, '-', '') = ? OR phone = ?",
+    [cleanPhone, cleanPhone]
   );
 
   const isPhoneExists = rows.length > 0;
