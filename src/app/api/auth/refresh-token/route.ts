@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { pool } from "../../utils/db";
-import { signJwt, generateRefreshToken } from "../../utils/jwt";
+import { verifyJwt, signJwt, generateRefreshToken } from "../../utils/jwt";
+import { AuthorityService } from "../../utils/authority-service";
 
 /**
  * 리프레시 토큰으로 액세스 토큰을 재발급합니다.
@@ -110,8 +111,29 @@ export async function POST(request: Request) {
 
     console.log("찾은 사용자:", { id: user.id, authority: user.authority });
 
-    // 새 accessToken 발급
-    const token = signJwt({ id: user.id, role: user.authority });
+    // 새로운 권한 구조 조회
+    // Frontend Design Guideline의 Coupling 원칙에 따라 권한 로직을 분리된 서비스에서 처리
+    const userAuthorities = await AuthorityService.getUserAuthorities(
+      connection,
+      user.id
+    );
+
+    // JWT 토큰에 사용할 권한 정보 결정
+    // Predictability 원칙에 따라 일관된 형태로 권한 정보 제공
+    let roleForJWT = "리더"; // 기본값
+    if (userAuthorities && userAuthorities.authorities.length > 0) {
+      // 가장 높은 권한(가장 낮은 level)을 JWT role로 사용
+      roleForJWT = userAuthorities.authorities[0].display_name;
+    }
+
+    console.log(
+      `사용자 권한 조회 완료: ${roleForJWT} (레벨: ${
+        userAuthorities?.highestAuthorityLevel || 999
+      })`
+    );
+
+    // 새 accessToken 발급 - 새로운 권한 구조 반영
+    const token = signJwt({ id: user.id, role: roleForJWT });
     console.log("새 액세스 토큰 발급 성공");
 
     // 새 리프래시 토큰 발급 및 갱신 (보안 강화)

@@ -3,6 +3,7 @@ import bcrypt from "bcrypt";
 import { pool } from "../../utils/db";
 import { signJwt, generateRefreshToken } from "../../utils/jwt";
 import { RowDataPacket } from "mysql2";
+import { AuthorityService } from "../../utils/authority-service";
 
 /**
  * 로그인 API
@@ -77,6 +78,27 @@ export async function POST(request: Request) {
 
     console.log(`비밀번호 검증 성공: 사용자 ID ${user.id}`);
 
+    // 새로운 권한 구조 조회
+    // Frontend Design Guideline의 Coupling 원칙에 따라 권한 로직을 분리된 서비스에서 처리
+    const userAuthorities = await AuthorityService.getUserAuthorities(
+      connection,
+      user.id
+    );
+
+    // JWT 토큰에 사용할 권한 정보 결정
+    // Predictability 원칙에 따라 일관된 형태로 권한 정보 제공
+    let roleForJWT = "리더"; // 기본값
+    if (userAuthorities && userAuthorities.authorities.length > 0) {
+      // 가장 높은 권한(가장 낮은 level)을 JWT role로 사용
+      roleForJWT = userAuthorities.authorities[0].display_name;
+    }
+
+    console.log(
+      `사용자 권한 조회 완료: ${roleForJWT} (레벨: ${
+        userAuthorities?.highestAuthorityLevel || 999
+      })`
+    );
+
     // 로그인 성공 (user 정보에서 비밀번호 등 민감 정보 제외)
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password: _, universe_id, ...restUserInfo } = user;
@@ -120,11 +142,10 @@ export async function POST(request: Request) {
       region_group_id: user.region_group_id, // region_group_id 추가
     };
 
-    // JWT 토큰 발급 (id, role/authority 등 주요 정보 포함)
-    const token = signJwt({ id: userInfo.id, role: userInfo.authority });
-    console.log(
-      `JWT 토큰 발급: 사용자 ID ${userInfo.id}, 권한 ${userInfo.authority}`
-    );
+    // JWT 토큰 발급 (id, role 포함 - 새로운 권한 구조 반영)
+    // Memory에서 언급된 대로 JWT 토큰 필드명 통일: decoded.id 사용
+    const token = signJwt({ id: userInfo.id, role: roleForJWT });
+    console.log(`JWT 토큰 발급: 사용자 ID ${userInfo.id}, 권한 ${roleForJWT}`);
 
     // 리프레시 토큰 발급 및 DB 저장
     const refreshToken = generateRefreshToken();
