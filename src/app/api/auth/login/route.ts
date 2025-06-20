@@ -96,7 +96,6 @@ export async function POST(request: Request) {
     // region_group_id로 region, group_number 조회
     let region = null;
     let group_number = null;
-    let restUserInfoWithoutRegionGroupId = { ...restUserInfo };
     if (
       typeof user.region_group_id !== "undefined" &&
       user.region_group_id !== null
@@ -110,15 +109,15 @@ export async function POST(request: Request) {
         group_number = regionRows[0].group_number;
         console.log(`지역 정보 조회: ${region}, 그룹: ${group_number}`);
       }
-      const { ...rest } = restUserInfo;
-      restUserInfoWithoutRegionGroupId = rest;
     }
-    // userInfo에 university, region, group_number 필드 추가
+
+    // userInfo에 university, region, group_number, region_group_id 필드 추가
     const userInfo = {
-      ...restUserInfoWithoutRegionGroupId,
+      ...restUserInfo,
       university: universityName,
       region,
       group_number,
+      region_group_id: user.region_group_id, // region_group_id 추가
     };
 
     // JWT 토큰 발급 (id, role/authority 등 주요 정보 포함)

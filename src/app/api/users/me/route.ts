@@ -44,6 +44,7 @@ export async function GET(request: NextRequest) {
         u.major, u.student_id, u.grade, u.semester, u.enrollment_status,
         u.authority, u.vision_camp_batch, u.ministry_status, u.is_cherry_club_member,
         u.isCampusLeader, u.created_at, u.updated_at, u.fcm_token,
+        u.region_group_id,
         univ.name AS university,
         rg.region, rg.group_number
       FROM users u
