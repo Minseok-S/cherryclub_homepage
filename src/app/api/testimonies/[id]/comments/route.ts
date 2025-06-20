@@ -46,7 +46,7 @@ export async function GET(
       );
     }
 
-    // 댓글 목록 조회 (계층형 구조)
+    // 댓글 목록 조회 (계층형 구조) - testimony_comment_likes 테이블 사용
     const [commentsRows] = await connection.query(
       `SELECT 
         c.id, c.testimony_id, c.content, c.parent_id,
@@ -54,7 +54,7 @@ export async function GET(
         c.like_count,
         u.id AS author_id, u.name AS author_name,
         univ.name AS author_school,
-        EXISTS(SELECT 1 FROM comment_likes WHERE comment_id = c.id AND user_id = ?) AS is_liked
+        EXISTS(SELECT 1 FROM testimony_comment_likes WHERE comment_id = c.id AND user_id = ?) AS is_liked
       FROM testimony_comments c
       JOIN users u ON c.author_id = u.id
       LEFT JOIN Universities univ ON u.universe_id = univ.id
@@ -195,7 +195,7 @@ export async function POST(
 
     const commentId = (result as any).insertId;
 
-    // 생성된 댓글 조회
+    // 생성된 댓글 조회 - testimony_comment_likes 테이블 사용
     const [commentRows] = await connection.query(
       `SELECT 
         c.id, c.testimony_id, c.content, c.parent_id,
@@ -203,20 +203,24 @@ export async function POST(
         c.like_count,
         u.id AS author_id, u.name AS author_name,
         univ.name AS author_school,
-        0 AS is_liked
+        EXISTS(SELECT 1 FROM testimony_comment_likes WHERE comment_id = c.id AND user_id = ?) AS is_liked
       FROM testimony_comments c
       JOIN users u ON c.author_id = u.id
       LEFT JOIN Universities univ ON u.universe_id = univ.id
       WHERE c.id = ?`,
-      [commentId]
+      [userId, commentId]
     );
 
     await connection.commit();
     connection.release();
 
+    // is_liked 값을 boolean으로 변환
+    const comment = (commentRows as any[])[0];
+    comment.is_liked = !!comment.is_liked;
+
     return NextResponse.json({
       success: true,
-      comment: (commentRows as any[])[0],
+      comment: comment,
     });
   } catch (error) {
     console.error("댓글 작성 오류:", error);

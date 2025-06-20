@@ -41,7 +41,7 @@ export async function POST(
 
     // 댓글 존재 여부 확인
     const [commentRows] = await connection.query(
-      "SELECT id FROM testimony_comments WHERE id = ?",
+      "SELECT id, author_id FROM testimony_comments WHERE id = ?",
       [id]
     );
 
@@ -54,18 +54,32 @@ export async function POST(
       );
     }
 
-    // 좋아요 상태 확인
+    // 간증 댓글 좋아요 테이블 생성 (존재하지 않는 경우)
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS testimony_comment_likes (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        comment_id INT NOT NULL,
+        user_id INT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY unique_testimony_comment_like (comment_id, user_id),
+        FOREIGN KEY (comment_id) REFERENCES testimony_comments(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+
+    // 좋아요 상태 확인 (간증 댓글 좋아요 테이블 사용)
     const [likeRows] = await connection.query(
-      "SELECT id FROM comment_likes WHERE comment_id = ? AND user_id = ?",
+      "SELECT id FROM testimony_comment_likes WHERE comment_id = ? AND user_id = ?",
       [id, userId]
     );
 
     const isLiked = (likeRows as any[]).length > 0;
+    const commentData = (commentRows as any[])[0];
 
     if (isLiked) {
       // 좋아요 취소
       await connection.query(
-        "DELETE FROM comment_likes WHERE comment_id = ? AND user_id = ?",
+        "DELETE FROM testimony_comment_likes WHERE comment_id = ? AND user_id = ?",
         [id, userId]
       );
 
@@ -77,7 +91,7 @@ export async function POST(
     } else {
       // 좋아요 추가
       await connection.query(
-        "INSERT INTO comment_likes (comment_id, user_id) VALUES (?, ?)",
+        "INSERT INTO testimony_comment_likes (comment_id, user_id) VALUES (?, ?)",
         [id, userId]
       );
 
@@ -86,6 +100,26 @@ export async function POST(
         "UPDATE testimony_comments SET like_count = like_count + 1 WHERE id = ?",
         [id]
       );
+
+      // 좋아요 알림 생성 (자기 자신에게는 알림 보내지 않음)
+      try {
+        if (commentData.author_id !== userId) {
+          await connection.query(
+            `INSERT INTO notifications (user_id, title, message, type, related_id, created_at, is_read) 
+             VALUES (?, ?, ?, ?, ?, NOW(), 0)`,
+            [
+              commentData.author_id,
+              "댓글 좋아요",
+              "회원님의 간증 댓글에 좋아요를 눌렀습니다.",
+              "comment_like",
+              id,
+            ]
+          );
+        }
+      } catch (notificationError) {
+        console.error("간증 댓글 좋아요 알림 생성 실패:", notificationError);
+        // 알림 생성 실패해도 핵심 기능에는 영향 없음
+      }
     }
 
     // 최종 좋아요 수 조회
