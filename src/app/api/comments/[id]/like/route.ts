@@ -39,9 +39,9 @@ export async function POST(
     connection = await pool.getConnection();
     await connection.beginTransaction();
 
-    // 댓글 존재 여부 확인
+    // 댓글 존재 여부 및 작성자 확인
     const [commentRows] = await connection.query(
-      "SELECT id FROM notice_comments WHERE id = ?",
+      "SELECT id, author_id FROM notice_comments WHERE id = ?",
       [id]
     );
 
@@ -61,6 +61,7 @@ export async function POST(
     );
 
     const isLiked = (likeRows as any[]).length > 0;
+    const commentData = (commentRows as any[])[0];
 
     if (isLiked) {
       // 좋아요 취소
@@ -86,6 +87,29 @@ export async function POST(
         "UPDATE notice_comments SET like_count = like_count + 1 WHERE id = ?",
         [id]
       );
+
+      // 좋아요 알림 생성 (자기 자신에게는 알림 보내지 않음)
+      try {
+        if (commentData.author_id !== userId) {
+          await connection.query(
+            `INSERT INTO notifications (user_id, title, message, type, related_id, created_at, is_read) 
+             VALUES (?, ?, ?, ?, ?, NOW(), 0)`,
+            [
+              commentData.author_id,
+              "댓글 좋아요",
+              "회원님의 공지사항 댓글에 좋아요를 눌렀습니다.",
+              "comment_like",
+              id,
+            ]
+          );
+        }
+      } catch (notificationError) {
+        console.error(
+          "공지사항 댓글 좋아요 알림 생성 실패:",
+          notificationError
+        );
+        // 알림 생성 실패해도 핵심 기능에는 영향 없음
+      }
     }
 
     // 최종 좋아요 수 조회
