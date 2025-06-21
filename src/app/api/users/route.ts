@@ -41,7 +41,7 @@ export async function GET(request: Request) {
         univ.name AS university,
         u.major, u.student_id, u.grade, u.semester, u.enrollment_status,
         u.vision_camp_batch, u.ministry_status, u.is_cherry_club_member,
-        u.created_at, u.isCampusLeader, u.isBranchLeader, u.isGroupLeader
+        u.created_at, u.isCampusLeader
       FROM users u
       LEFT JOIN Universities univ ON u.universe_id = univ.id
       LEFT JOIN region_groups rg ON u.region_group_id = rg.id
@@ -143,7 +143,7 @@ export async function GET(request: Request) {
 /**
  * @function PATCH
  * @description 여러 명의 유저 권한/리더 정보를 한 번에 수정합니다. (새로운 권한 체계 적용)
- * @param {Object} req - { updates: Array<{ id: number, authorities?: number[], isCampusLeader?: number, isBranchLeader?: number, isGroupLeader?: number }> }
+ * @param {Object} req - { updates: Array<{ id: number, authorities?: number[], isCampusLeader?: number }> }
  * @returns {Object} { results: Array<{ id: number, success: boolean, reason?: string }> }
  * @example
  * fetch('/api/users', {
@@ -151,8 +151,8 @@ export async function GET(request: Request) {
  *   headers: { 'Content-Type': 'application/json' },
  *   body: JSON.stringify({
  *     updates: [
- *       { id: 1, authorities: [2, 3], isCampusLeader: 0, isBranchLeader: 1, isGroupLeader: 0 },
- *       { id: 2, authorities: [1], isCampusLeader: 1, isBranchLeader: 0, isGroupLeader: 1 }
+ *       { id: 1, authorities: [2, 3], isCampusLeader: 0 },
+ *       { id: 2, authorities: [1, 4], isCampusLeader: 1 }
  *     ]
  *   })
  * })
@@ -160,7 +160,7 @@ export async function GET(request: Request) {
  *   .then(data => console.log(data.results));
  */
 export async function PATCH(request: Request) {
-  const UPDATE_FIELDS = ["isCampusLeader", "isBranchLeader", "isGroupLeader"];
+  const UPDATE_FIELDS = ["isCampusLeader"];
   const AUTH_HEADER = "authorization";
   let connection;
   try {

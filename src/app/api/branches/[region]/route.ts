@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "../../utils/db";
 import { verifyJwt } from "../../utils/jwt";
+import { AuthorityService } from "../../utils/authority-service";
 
 // 인증 헤더 상수
 const AUTH_HEADER = "authorization";
@@ -14,8 +15,9 @@ const AUTH_HEADER = "authorization";
  *
  * @description
  * Frontend Design Guideline 적용:
- * - Single Responsibility: 특정 지역의 조 정보만 처리
- * - Cohesion: 조 관련 정보를 함께 관리
+ * - Single Responsibility: 특정 지역의 조 정보만 처리하며 새로운 권한 체제 사용
+ * - Cohesion: 조 관련 정보를 함께 관리하고 권한 로직을 AuthorityService로 통합
+ * - Predictability: 일관된 응답 구조 제공
  */
 export async function GET(
   request: NextRequest,
@@ -37,19 +39,42 @@ export async function GET(
   try {
     connection = await pool.getConnection();
 
-    // 특정 지역의 조 목록 조회
+    // Frontend Design Guideline: Single Responsibility - 새로운 권한 체제로 조장 조회
+    // 특정 지역의 조 목록 조회 (새로운 권한 구조 사용)
     const [groupsRows] = await connection.query(
       `SELECT 
         rg.id,
         rg.region,
         rg.group_number,
         COUNT(u.id) as member_count,
-        MAX(CASE WHEN u.isGroupLeader = 1 THEN u.name ELSE NULL END) as group_leader_name,
-        MAX(CASE WHEN u.isGroupLeader = 1 THEN u.id ELSE NULL END) as group_leader_id,
-        MAX(CASE WHEN u.isGroupLeader = 1 THEN univ.name ELSE NULL END) as group_leader_school
+        -- 새로운 권한 체제: 조장 권한을 가진 사용자 조회
+        (SELECT u2.name 
+         FROM users u2 
+         INNER JOIN user_authorities ua2 ON u2.id = ua2.user_id
+         INNER JOIN authorities a2 ON ua2.authority_id = a2.id
+         WHERE u2.region_group_id = rg.id
+         AND a2.name = 'GROUP_LEADER' 
+         AND ua2.is_active = TRUE
+         LIMIT 1) as group_leader_name,
+        (SELECT u2.id 
+         FROM users u2 
+         INNER JOIN user_authorities ua2 ON u2.id = ua2.user_id
+         INNER JOIN authorities a2 ON ua2.authority_id = a2.id
+         WHERE u2.region_group_id = rg.id
+         AND a2.name = 'GROUP_LEADER' 
+         AND ua2.is_active = TRUE
+         LIMIT 1) as group_leader_id,
+        (SELECT univ.name 
+         FROM users u2 
+         INNER JOIN user_authorities ua2 ON u2.id = ua2.user_id
+         INNER JOIN authorities a2 ON ua2.authority_id = a2.id
+         LEFT JOIN Universities univ ON u2.universe_id = univ.id
+         WHERE u2.region_group_id = rg.id
+         AND a2.name = 'GROUP_LEADER' 
+         AND ua2.is_active = TRUE
+         LIMIT 1) as group_leader_school
       FROM region_groups rg
       LEFT JOIN users u ON u.region_group_id = rg.id
-      LEFT JOIN Universities univ ON u.universe_id = univ.id
       WHERE rg.region = ?
       GROUP BY rg.id, rg.region, rg.group_number
       ORDER BY rg.group_number`,

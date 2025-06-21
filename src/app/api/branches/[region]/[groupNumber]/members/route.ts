@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "../../../../utils/db";
 import { verifyJwt } from "../../../../utils/jwt";
+import { AuthorityService } from "../../../../utils/authority-service";
 
 // 인증 헤더 상수
 const AUTH_HEADER = "authorization";
@@ -14,8 +15,9 @@ const AUTH_HEADER = "authorization";
  *
  * @description
  * Frontend Design Guideline 적용:
- * - Single Responsibility: 특정 조의 멤버 정보만 처리
+ * - Single Responsibility: 특정 조의 멤버 정보만 처리하며 새로운 권한 체제 사용
  * - Predictability: 일관된 응답 구조
+ * - Cohesion: 권한 관련 로직을 AuthorityService로 통합
  */
 export async function GET(
   request: NextRequest,
@@ -54,7 +56,8 @@ export async function GET(
 
     const groupId = (groupRows as any[])[0].id;
 
-    // 조 멤버 목록 조회
+    // Frontend Design Guideline: Single Responsibility - 새로운 권한 체제로 조 멤버 조회
+    // 조 멤버 목록 조회 (새로운 권한 구조 사용)
     const [membersRows] = await connection.query(
       `SELECT 
         u.id,
@@ -66,18 +69,33 @@ export async function GET(
         u.enrollment_status,
         u.ministry_status,
         u.is_cherry_club_member,
-        u.isGroupLeader,
-        u.isBranchLeader,
         univ.name as university_name,
         rg.region,
-        rg.group_number
+        rg.group_number,
+        -- 새로운 권한 체제: 조장 권한 확인
+        (SELECT COUNT(*) > 0 
+         FROM user_authorities ua 
+         INNER JOIN authorities a ON ua.authority_id = a.id 
+         WHERE ua.user_id = u.id 
+         AND a.name = 'GROUP_LEADER' 
+         AND ua.is_active = TRUE) as is_group_leader,
+        -- 새로운 권한 체제: 지부장 권한 확인
+        (SELECT COUNT(*) > 0 
+         FROM user_authorities ua 
+         INNER JOIN authorities a ON ua.authority_id = a.id 
+         WHERE ua.user_id = u.id 
+         AND a.name = 'BRANCH_DIRECTOR' 
+         AND ua.is_active = TRUE) as is_branch_leader
       FROM users u
       JOIN region_groups rg ON u.region_group_id = rg.id
       LEFT JOIN Universities univ ON u.universe_id = univ.id
       WHERE rg.id = ?
       ORDER BY 
-        u.isGroupLeader DESC,
-        u.isBranchLeader DESC,
+        -- 새로운 권한 체제: 권한 우선순위로 정렬 (지부장 > 조장 > 이름)
+        (SELECT MIN(a.level) 
+         FROM user_authorities ua 
+         INNER JOIN authorities a ON ua.authority_id = a.id 
+         WHERE ua.user_id = u.id AND ua.is_active = TRUE) ASC,
         u.name ASC`,
       [groupId]
     );
@@ -95,8 +113,8 @@ export async function GET(
       enrollment_status: member.enrollment_status,
       ministry_status: member.ministry_status,
       university_name: member.university_name,
-      is_group_leader: !!member.isGroupLeader,
-      is_branch_leader: !!member.isBranchLeader,
+      is_group_leader: !!member.is_group_leader,
+      is_branch_leader: !!member.is_branch_leader,
       is_cherry_club_member: member.is_cherry_club_member,
     }));
 
