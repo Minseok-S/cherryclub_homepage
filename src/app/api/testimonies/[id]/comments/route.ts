@@ -218,10 +218,13 @@ export async function POST(
     const comment = (commentRows as any[])[0];
     comment.is_liked = !!comment.is_liked;
 
-    return NextResponse.json({
-      success: true,
-      comment: comment,
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        comment: comment,
+      },
+      { status: 201 }
+    );
   } catch (error) {
     console.error("댓글 작성 오류:", error);
     if (connection) {

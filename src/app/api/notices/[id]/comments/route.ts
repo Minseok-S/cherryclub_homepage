@@ -67,9 +67,17 @@ export async function GET(
     );
 
     // 댓글과 대댓글 분리 및 계층 구조화
+    // Frontend Design Guideline: Predictability - 안전한 계층 구조 처리
     const parentComments: any[] = [];
     const replyMap: { [key: string]: any[] } = {};
+    const orphanReplies: any[] = []; // 부모를 찾지 못한 대댓글들
 
+    console.log(
+      "댓글 계층 구조 처리 시작 - 전체 댓글 수:",
+      (commentsRows as any[]).length
+    );
+
+    // 첫 번째 패스: 모든 최상위 댓글 처리
     (commentsRows as any[]).forEach((comment) => {
       comment.is_liked = !!comment.is_liked;
 
@@ -77,11 +85,38 @@ export async function GET(
         comment.replies = [];
         parentComments.push(comment);
         replyMap[comment.id] = comment.replies;
+        console.log("최상위 댓글 추가:", comment.id);
       } else {
-        if (replyMap[comment.parent_id]) {
-          replyMap[comment.parent_id].push(comment);
-        }
+        orphanReplies.push(comment);
+        console.log(
+          "대댓글 임시 저장:",
+          comment.id,
+          "부모:",
+          comment.parent_id
+        );
       }
+    });
+
+    // 두 번째 패스: 대댓글들을 부모에 할당
+    orphanReplies.forEach((reply) => {
+      if (replyMap[reply.parent_id]) {
+        replyMap[reply.parent_id].push(reply);
+        console.log("대댓글 할당 성공:", reply.id, "→ 부모:", reply.parent_id);
+      } else {
+        console.log(
+          "부모를 찾을 수 없는 대댓글:",
+          reply.id,
+          "부모 ID:",
+          reply.parent_id
+        );
+      }
+    });
+
+    console.log("최종 최상위 댓글 수:", parentComments.length);
+    parentComments.forEach((comment, index) => {
+      console.log(
+        `최상위 댓글 ${index}: ID=${comment.id}, 대댓글 수=${comment.replies.length}`
+      );
     });
 
     connection.release();
@@ -214,10 +249,13 @@ export async function POST(
     await connection.commit();
     connection.release();
 
-    return NextResponse.json({
-      success: true,
-      comment: (commentRows as any[])[0],
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        comment: (commentRows as any[])[0],
+      },
+      { status: 201 }
+    );
   } catch (error) {
     console.error("댓글 작성 오류:", error);
     if (connection) {
