@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { pool } from "../utils/db";
 import { verifyJwt } from "../utils/jwt";
+import { FCMService } from "../utils/firebase";
 
 // 인증 헤더 상수
 const AUTH_HEADER = "authorization";
@@ -78,10 +79,150 @@ export async function POST(request: NextRequest) {
     try {
       connection = await pool.getConnection();
       const [result] = await connection.query(query, params);
+      const eventId = (result as any).insertId;
+
+      // 생성된 이벤트 정보 조회 (알림 전송용)
+      const [eventRows] = await connection.query(
+        "SELECT * FROM events WHERE id = ?",
+        [eventId]
+      );
+      const event = (eventRows as any[])[0];
+
+      // FCM 토큰이 있는 모든 사용자에게 푸시 알림 전송
+      try {
+        // Firebase 초기화 상태 확인
+        if (!FCMService.isAvailable()) {
+          console.warn(
+            "⚠️  Firebase가 초기화되지 않았습니다. 푸시 알림을 건너뜁니다:",
+            FCMService.getInitializationError()
+          );
+          console.log("✅ 일정은 정상적으로 생성되었습니다. (푸시 알림 제외)");
+          connection.release();
+          return NextResponse.json({
+            success: true,
+            id: eventId,
+            message: "이벤트가 성공적으로 생성되었습니다.",
+            warning: "Firebase 초기화 실패로 푸시 알림이 전송되지 않았습니다.",
+          });
+        }
+
+        const [usersRows] = await connection.query(
+          "SELECT id, fcm_token FROM users WHERE fcm_token IS NOT NULL AND fcm_token != ''"
+        );
+
+        const users = usersRows as Array<{ id: string; fcm_token: string }>;
+
+        if (users.length > 0) {
+          console.log(`📊 데이터베이스에서 조회된 FCM 토큰: ${users.length}개`);
+
+          const validTokenData: Array<{
+            userId: string;
+            fcmToken: string;
+            badgeCount: number;
+          }> = [];
+
+          // 각 사용자에게 알림 DB 레코드 생성 및 뱃지 수 관리
+          for (const user of users) {
+            try {
+              // FCM 토큰 유효성 검증
+              const tokenValidation = FCMService.validateToken(user.fcm_token);
+              if (!tokenValidation.isValid) {
+                console.warn(
+                  `❌ 유효하지 않은 FCM 토큰 (User ${user.id}): ${
+                    tokenValidation.reason
+                  } - 토큰: ${user.fcm_token.substring(0, 30)}...`
+                );
+                continue;
+              }
+
+              // 알림 레코드 DB 저장
+              await connection.query(
+                `INSERT INTO notifications 
+                   (user_id, title, message, type, related_id, created_at, is_read) 
+                   VALUES (?, ?, ?, ?, ?, NOW(), 0)`,
+                [
+                  user.id,
+                  "새로운 일정이 등록되었습니다",
+                  event.title.length > 50
+                    ? event.title.substring(0, 50) + "..."
+                    : event.title,
+                  "event",
+                  event.id,
+                ]
+              );
+
+              // 해당 사용자의 읽지 않은 알림 수 조회 (iOS 뱃지용)
+              const [unreadCountRows] = await connection.query(
+                "SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND is_read = 0",
+                [user.id]
+              );
+              const unreadCount = (unreadCountRows as any[])[0].count;
+
+              validTokenData.push({
+                userId: user.id,
+                fcmToken: user.fcm_token,
+                badgeCount: unreadCount,
+              });
+            } catch (notificationError) {
+              console.error(
+                `❌ 사용자 ${user.id} 알림 처리 실패:`,
+                notificationError
+              );
+            }
+          }
+
+          console.log(
+            `✅ 유효한 FCM 토큰: ${validTokenData.length}개 (총 ${users.length}개 중)`
+          );
+
+          if (validTokenData.length > 0) {
+            // 푸시 알림 전송 (백그라운드 작업으로 처리)
+            setImmediate(async () => {
+              try {
+                console.log(
+                  `📤 FCM 푸시 알림 전송 시작: ${validTokenData.length}개 토큰`
+                );
+
+                const result = await FCMService.sendToMultipleDevices(
+                  validTokenData.map((data) => data.fcmToken),
+                  "새로운 일정이 등록되었습니다",
+                  event.title.length > 100
+                    ? event.title.substring(0, 100) + "..."
+                    : event.title,
+                  {
+                    type: "event",
+                    event_id: event.id.toString(),
+                    action: "open_notification",
+                    category: event.category,
+                  },
+                  async (fcmToken: string) => {
+                    const tokenData = validTokenData.find(
+                      (data) => data.fcmToken === fcmToken
+                    );
+                    return tokenData?.badgeCount || 0;
+                  }
+                );
+
+                console.log(
+                  `✅ 일정 푸시 알림 전송 완료: 성공 ${result.success}개, 실패 ${result.failure}개, 무효 토큰 ${result.invalidTokens.length}개`
+                );
+              } catch (fcmError) {
+                console.error("❌ FCM 전송 중 오류:", fcmError);
+              }
+            });
+          }
+        }
+      } catch (notificationError) {
+        console.error(
+          "❌ 알림 처리 중 오류 (일정 생성은 성공):",
+          notificationError
+        );
+      }
+
       connection.release();
       return NextResponse.json({
         success: true,
-        id: (result as any).insertId,
+        id: eventId,
         message: "이벤트가 성공적으로 생성되었습니다.",
       });
     } catch (error) {
@@ -234,16 +375,154 @@ export async function PUT(request: NextRequest) {
     try {
       connection = await pool.getConnection();
       const [result] = await connection.query(query, params);
-      connection.release();
 
       // 영향받은 행이 없는 경우 (ID가 존재하지 않음)
       if ((result as any).affectedRows === 0) {
+        connection.release();
         return NextResponse.json(
           { error: "이벤트를 찾을 수 없습니다." },
           { status: 404 }
         );
       }
 
+      // 수정된 이벤트 정보 조회 (알림 전송용)
+      const [eventRows] = await connection.query(
+        "SELECT * FROM events WHERE id = ?",
+        [body.id]
+      );
+      const event = (eventRows as any[])[0];
+
+      // FCM 토큰이 있는 모든 사용자에게 푸시 알림 전송
+      try {
+        // Firebase 초기화 상태 확인
+        if (!FCMService.isAvailable()) {
+          console.warn(
+            "⚠️  Firebase가 초기화되지 않았습니다. 푸시 알림을 건너뜁니다:",
+            FCMService.getInitializationError()
+          );
+          console.log("✅ 일정은 정상적으로 수정되었습니다. (푸시 알림 제외)");
+          connection.release();
+          return NextResponse.json({
+            success: true,
+            message: "이벤트가 성공적으로 수정되었습니다.",
+            warning: "Firebase 초기화 실패로 푸시 알림이 전송되지 않았습니다.",
+          });
+        }
+
+        const [usersRows] = await connection.query(
+          "SELECT id, fcm_token FROM users WHERE fcm_token IS NOT NULL AND fcm_token != ''"
+        );
+
+        const users = usersRows as Array<{ id: string; fcm_token: string }>;
+
+        if (users.length > 0) {
+          console.log(`📊 데이터베이스에서 조회된 FCM 토큰: ${users.length}개`);
+
+          const validTokenData: Array<{
+            userId: string;
+            fcmToken: string;
+            badgeCount: number;
+          }> = [];
+
+          // 각 사용자에게 알림 DB 레코드 생성 및 뱃지 수 관리
+          for (const user of users) {
+            try {
+              // FCM 토큰 유효성 검증
+              const tokenValidation = FCMService.validateToken(user.fcm_token);
+              if (!tokenValidation.isValid) {
+                console.warn(
+                  `❌ 유효하지 않은 FCM 토큰 (User ${user.id}): ${
+                    tokenValidation.reason
+                  } - 토큰: ${user.fcm_token.substring(0, 30)}...`
+                );
+                continue;
+              }
+
+              // 알림 레코드 DB 저장
+              await connection.query(
+                `INSERT INTO notifications 
+                   (user_id, title, message, type, related_id, created_at, is_read) 
+                   VALUES (?, ?, ?, ?, ?, NOW(), 0)`,
+                [
+                  user.id,
+                  "일정이 수정되었습니다",
+                  event.title.length > 50
+                    ? event.title.substring(0, 50) + "..."
+                    : event.title,
+                  "event",
+                  event.id,
+                ]
+              );
+
+              // 해당 사용자의 읽지 않은 알림 수 조회 (iOS 뱃지용)
+              const [unreadCountRows] = await connection.query(
+                "SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND is_read = 0",
+                [user.id]
+              );
+              const unreadCount = (unreadCountRows as any[])[0].count;
+
+              validTokenData.push({
+                userId: user.id,
+                fcmToken: user.fcm_token,
+                badgeCount: unreadCount,
+              });
+            } catch (notificationError) {
+              console.error(
+                `❌ 사용자 ${user.id} 알림 처리 실패:`,
+                notificationError
+              );
+            }
+          }
+
+          console.log(
+            `✅ 유효한 FCM 토큰: ${validTokenData.length}개 (총 ${users.length}개 중)`
+          );
+
+          if (validTokenData.length > 0) {
+            // 푸시 알림 전송 (백그라운드 작업으로 처리)
+            setImmediate(async () => {
+              try {
+                console.log(
+                  `📤 FCM 푸시 알림 전송 시작: ${validTokenData.length}개 토큰`
+                );
+
+                const result = await FCMService.sendToMultipleDevices(
+                  validTokenData.map((data) => data.fcmToken),
+                  "일정이 수정되었습니다",
+                  event.title.length > 100
+                    ? event.title.substring(0, 100) + "..."
+                    : event.title,
+                  {
+                    type: "event",
+                    event_id: event.id.toString(),
+                    action: "open_notification",
+                    category: event.category,
+                  },
+                  async (fcmToken: string) => {
+                    const tokenData = validTokenData.find(
+                      (data) => data.fcmToken === fcmToken
+                    );
+                    return tokenData?.badgeCount || 0;
+                  }
+                );
+
+                console.log(
+                  `✅ 일정 푸시 알림 전송 완료: 성공 ${result.success}개, 실패 ${result.failure}개, 무효 토큰 ${result.invalidTokens.length}개`
+                );
+              } catch (fcmError) {
+                console.error("❌ FCM 전송 중 오류:", fcmError);
+              }
+            });
+          }
+        }
+      } catch (notificationError) {
+        console.error(
+          "❌ 알림 처리 중 오류 (일정 수정은 성공):",
+          notificationError
+        );
+      }
+
+      connection.release();
       return NextResponse.json({
         success: true,
         message: "이벤트가 성공적으로 수정되었습니다.",
