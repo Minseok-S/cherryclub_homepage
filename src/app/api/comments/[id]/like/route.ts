@@ -39,9 +39,9 @@ export async function POST(
     connection = await pool.getConnection();
     await connection.beginTransaction();
 
-    // 댓글 존재 여부 및 작성자 확인
+    // 댓글 존재 여부 및 작성자, 공지사항 ID 확인
     const [commentRows] = await connection.query(
-      "SELECT id, author_id FROM notice_comments WHERE id = ?",
+      "SELECT id, author_id, notice_id FROM notice_comments WHERE id = ?",
       [id]
     );
 
@@ -99,7 +99,7 @@ export async function POST(
               "댓글 좋아요",
               "회원님의 공지사항 댓글에 좋아요를 눌렀습니다.",
               "comment_like",
-              id,
+              commentData.notice_id,
             ]
           );
         }
