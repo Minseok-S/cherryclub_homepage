@@ -317,10 +317,17 @@ export async function DELETE(
       id,
     ]);
 
-    // 댓글 삭제
-    await connection.query("DELETE FROM notice_comments WHERE notice_id = ?", [
-      id,
-    ]);
+    // 댓글 삭제 (대댓글부터 먼저 삭제)
+    // Frontend Design Guideline의 Predictability 원칙: 외래키 제약을 고려한 순서대로 삭제
+    await connection.query(
+      "DELETE FROM notice_comments WHERE notice_id = ? AND parent_id IS NOT NULL",
+      [id]
+    );
+    // 그 다음 부모 댓글 삭제
+    await connection.query(
+      "DELETE FROM notice_comments WHERE notice_id = ? AND parent_id IS NULL",
+      [id]
+    );
 
     // 공지사항 삭제
     await connection.query("DELETE FROM notices WHERE id = ?", [id]);
