@@ -42,7 +42,7 @@ export async function GET(
       `SELECT 
         u.id, u.name, u.phone, u.birthday, u.gender,
         u.major, u.student_id, u.grade, u.semester, u.enrollment_status,
-        u.authority, u.vision_camp_batch, u.ministry_status, u.is_cherry_club_member,
+        u.vision_camp_batch, u.ministry_status, u.is_cherry_club_member,
         u.isCampusLeader, u.created_at, u.updated_at,
         univ.name AS university,
         rg.region, rg.group_number
@@ -109,10 +109,30 @@ export async function PATCH(
 
   // 본인 또는 권한자만 수정 가능
   const targetUserId = parseInt(id);
-  const currentUserAuthority = payload?.role;
   const isOwnProfile = currentUserId === targetUserId;
-  const isAuthorized =
-    isOwnProfile || (currentUserAuthority && currentUserAuthority <= 4);
+
+  // 관리자 권한 체크 (본인이 아닌 경우)
+  let hasAdminAccess = false;
+  if (!isOwnProfile) {
+    // 현재 사용자의 권한 조회
+    let adminConnection;
+    try {
+      adminConnection = await pool.getConnection();
+      const [authRows] = await adminConnection.query(
+        `SELECT COUNT(*) as count FROM user_authorities ua
+         JOIN authorities a ON ua.authority_id = a.id
+         WHERE ua.user_id = ? AND a.name IN ('ADMIN', 'NCMN_STAFF', 'LEADERSHIP', 'TEAM_LEADER', 'BRANCH_DIRECTOR')`,
+        [currentUserId]
+      );
+      hasAdminAccess = (authRows as any[])[0].count > 0;
+      adminConnection.release();
+    } catch (error) {
+      if (adminConnection) adminConnection.release();
+      console.error("권한 확인 오류:", error);
+    }
+  }
+
+  const isAuthorized = isOwnProfile || hasAdminAccess;
 
   if (!isAuthorized) {
     return NextResponse.json(
@@ -315,7 +335,7 @@ export async function PATCH(
       `SELECT 
         u.id, u.name, u.phone, u.birthday, u.gender,
         u.major, u.student_id, u.grade, u.semester, u.enrollment_status,
-        u.authority, u.vision_camp_batch, u.ministry_status, u.is_cherry_club_member,
+        u.vision_camp_batch, u.ministry_status, u.is_cherry_club_member,
         u.isCampusLeader, u.created_at, u.updated_at,
         univ.name AS university,
         rg.region, rg.group_number
