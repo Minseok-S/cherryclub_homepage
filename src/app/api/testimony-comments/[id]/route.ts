@@ -25,7 +25,6 @@ export async function PATCH(
 
   const payload = verifyJwt(token);
   const userId = payload?.id;
-  const userAuthority = payload?.role;
   const { id } = await context.params;
 
   if (!id || isNaN(parseInt(id))) {
@@ -68,10 +67,18 @@ export async function PATCH(
     }
 
     const authorId = (commentRows as any[])[0].author_id;
-
-    // 권한 확인: 작성자이거나 관리자(권한 4 이하)
-    const isAdmin = userAuthority !== null && userAuthority <= 4;
     const isAuthor = authorId === userId;
+
+    // 새로운 권한 체제로 관리자 권한 확인
+    const [adminRows] = await connection.query(
+      `SELECT EXISTS(
+        SELECT 1 FROM user_authorities ua 
+        JOIN authorities a ON ua.authority_id = a.id 
+        WHERE ua.user_id = ? AND a.name IN ('ADMIN', 'NCMN_STAFF', 'LEADERSHIP', 'BRANCH_DIRECTOR')
+      ) AS is_admin`,
+      [userId]
+    );
+    const isAdmin = !!(adminRows as any[])[0].is_admin;
 
     if (!isAuthor && !isAdmin) {
       await connection.rollback();
@@ -149,7 +156,6 @@ export async function DELETE(
 
   const payload = verifyJwt(token);
   const userId = payload?.id;
-  const userAuthority = payload?.role;
   const { id } = await context.params;
 
   if (!id || isNaN(parseInt(id))) {
@@ -181,10 +187,18 @@ export async function DELETE(
 
     const authorId = (commentRows as any[])[0].author_id;
     const parentId = (commentRows as any[])[0].parent_id;
-
-    // 권한 확인: 작성자이거나 관리자(권한 4 이하)
-    const isAdmin = userAuthority !== null && userAuthority <= 4;
     const isAuthor = authorId === userId;
+
+    // 새로운 권한 체제로 관리자 권한 확인
+    const [adminRows] = await connection.query(
+      `SELECT EXISTS(
+        SELECT 1 FROM user_authorities ua 
+        JOIN authorities a ON ua.authority_id = a.id 
+        WHERE ua.user_id = ? AND a.name IN ('ADMIN', 'NCMN_STAFF', 'LEADERSHIP', 'BRANCH_DIRECTOR')
+      ) AS is_admin`,
+      [userId]
+    );
+    const isAdmin = !!(adminRows as any[])[0].is_admin;
 
     if (!isAuthor && !isAdmin) {
       console.log("권한 없음 - 403 반환");

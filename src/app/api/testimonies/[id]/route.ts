@@ -43,7 +43,7 @@ export async function GET(
       [id]
     );
 
-    // 간증 상세 조회 (카테고리 포함)
+    // 간증 상세 조회 (카테고리 및 핫게시글 정보 포함)
     const [testimonyRows] = await connection.query(
       `SELECT 
         t.id, t.category, t.content, 
@@ -52,7 +52,11 @@ export async function GET(
         (SELECT COUNT(*) FROM testimony_comments WHERE testimony_id = t.id) AS comment_count,
         u.id AS author_id, u.name AS author_name,
         univ.name AS author_school,
-        EXISTS(SELECT 1 FROM testimony_likes WHERE testimony_id = t.id AND user_id = ?) AS is_liked
+        EXISTS(SELECT 1 FROM testimony_likes WHERE testimony_id = t.id AND user_id = ?) AS is_liked,
+        CASE 
+          WHEN t.like_count >= 10 THEN 1 
+          ELSE 0 
+        END AS is_hot
       FROM testimonies t
       JOIN users u ON t.author_id = u.id
       LEFT JOIN Universities univ ON u.universe_id = univ.id
@@ -121,7 +125,6 @@ export async function PUT(
 
   const payload = verifyJwt(token);
   const userId = payload?.id;
-  const userAuthority = payload?.role;
   const { id } = await context.params;
 
   if (!id || isNaN(parseInt(id))) {
@@ -176,10 +179,18 @@ export async function PUT(
     }
 
     const authorId = (authorRows as any[])[0].author_id;
-
-    // 권한 확인: 작성자이거나 관리자(권한 4 이하)
     const isAuthor = authorId === userId;
-    const isAdmin = userAuthority !== null && userAuthority <= 4;
+
+    // 새로운 권한 체제로 관리자 권한 확인
+    const [adminRows] = await connection.query(
+      `SELECT EXISTS(
+        SELECT 1 FROM user_authorities ua 
+        JOIN authorities a ON ua.authority_id = a.id 
+        WHERE ua.user_id = ? AND a.name IN ('ADMIN', 'NCMN_STAFF', 'LEADERSHIP', 'BRANCH_DIRECTOR')
+      ) AS is_admin`,
+      [userId]
+    );
+    const isAdmin = !!(adminRows as any[])[0].is_admin;
 
     if (!isAuthor && !isAdmin) {
       await connection.rollback();
@@ -212,7 +223,7 @@ export async function PUT(
       }
     }
 
-    // 수정된 간증 조회 (카테고리 포함)
+    // 수정된 간증 조회 (카테고리 및 핫게시글 정보 포함)
     const [testimonyRows] = await connection.query(
       `SELECT 
         t.id, t.category, t.content, 
@@ -221,7 +232,11 @@ export async function PUT(
         (SELECT COUNT(*) FROM testimony_comments WHERE testimony_id = t.id) AS comment_count,
         u.id AS author_id, u.name AS author_name,
         univ.name AS author_school,
-        EXISTS(SELECT 1 FROM testimony_likes WHERE testimony_id = t.id AND user_id = ?) AS is_liked
+        EXISTS(SELECT 1 FROM testimony_likes WHERE testimony_id = t.id AND user_id = ?) AS is_liked,
+        CASE 
+          WHEN t.like_count >= 10 THEN 1 
+          ELSE 0 
+        END AS is_hot
       FROM testimonies t
       JOIN users u ON t.author_id = u.id
       LEFT JOIN Universities univ ON u.universe_id = univ.id
@@ -287,7 +302,6 @@ export async function DELETE(
 
   const payload = verifyJwt(token);
   const userId = payload?.id;
-  const userAuthority = payload?.role;
   const { id } = await context.params;
 
   if (!id || isNaN(parseInt(id))) {
@@ -318,10 +332,18 @@ export async function DELETE(
     }
 
     const authorId = (authorRows as any[])[0].author_id;
-
-    // 권한 확인: 작성자이거나 관리자(권한 4 이하)
     const isAuthor = authorId === userId;
-    const isAdmin = userAuthority !== null && userAuthority <= 4;
+
+    // 새로운 권한 체제로 관리자 권한 확인
+    const [adminRows] = await connection.query(
+      `SELECT EXISTS(
+        SELECT 1 FROM user_authorities ua 
+        JOIN authorities a ON ua.authority_id = a.id 
+        WHERE ua.user_id = ? AND a.name IN ('ADMIN', 'NCMN_STAFF', 'LEADERSHIP', 'BRANCH_DIRECTOR')
+      ) AS is_admin`,
+      [userId]
+    );
+    const isAdmin = !!(adminRows as any[])[0].is_admin;
 
     if (!isAuthor && !isAdmin) {
       await connection.rollback();
