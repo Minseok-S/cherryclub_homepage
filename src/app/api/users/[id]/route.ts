@@ -40,7 +40,7 @@ export async function GET(
     // 사용자 정보 조회
     const [userRows] = await connection.query(
       `SELECT 
-        u.id, u.name, u.phone, u.birthday, u.gender,
+        u.id, u.name, u.email, u.phone, u.birthday, u.gender,
         u.major, u.student_id, u.grade, u.semester, u.enrollment_status,
         u.vision_camp_batch, u.ministry_status, u.is_cherry_club_member,
         u.isCampusLeader, u.created_at, u.updated_at,

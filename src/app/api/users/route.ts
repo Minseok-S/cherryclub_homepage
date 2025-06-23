@@ -36,7 +36,7 @@ export async function GET(request: Request) {
     // 새로운 권한 체계를 위한 사용자 목록 조회
     const [usersRows] = await connection.query(
       `SELECT 
-        u.id, u.name, u.gender, u.phone, u.birthday,
+        u.id, u.name, u.email, u.gender, u.phone, u.birthday,
         rg.region, rg.group_number,
         univ.name AS university,
         u.major, u.student_id, u.grade, u.semester, u.enrollment_status,
