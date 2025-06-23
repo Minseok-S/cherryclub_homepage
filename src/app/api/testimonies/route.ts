@@ -61,8 +61,8 @@ export async function GET(request: NextRequest) {
       queryParams.push(category);
     }
 
-    // 간증 목록 조회 (핫게시글 우선 정렬, 카테고리 포함)
-    // Frontend Design Guideline: Cohesion - 핫게시글 로직과 일반 정렬을 함께 관리
+    // 간증 목록 조회 (HOT 게시글 우선 정렬, 카테고리 포함)
+    // Frontend Design Guideline: Cohesion - HOT 게시글 로직과 일반 정렬을 함께 관리
     const [testimonyRows] = await connection.query(
       `SELECT 
         t.id, t.category, LEFT(t.content, 200) AS content, 
@@ -200,7 +200,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 생성된 간증 조회 (핫게시글 정보 포함)
+    // 생성된 간증 조회 (HOT 게시글 정보 포함)
     const [testimonyRows] = await connection.query(
       `SELECT 
         t.id, t.category, t.content, 

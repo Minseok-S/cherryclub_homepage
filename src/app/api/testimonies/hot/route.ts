@@ -6,14 +6,14 @@ import { verifyJwt } from "../../utils/jwt";
 const AUTH_HEADER = "authorization";
 
 /**
- * 핫게시글 목록 조회 API
+ * HOT 게시글 목록 조회 API
  * GET /api/testimonies/hot?page=1&page_size=10
  * @param request - NextRequest 객체
- * @returns 핫게시글 목록 (좋아요 10개 이상, 좋아요 수 내림차순)
+ * @returns HOT 게시글 목록 (좋아요 10개 이상, 좋아요 수 내림차순)
  *
  * @description
  * Frontend Design Guideline 적용:
- * - Cohesion: 핫게시글 관련 로직을 별도로 관리
+ * - Cohesion: HOT 게시글 관련 로직을 별도로 관리
  * - Predictability: 일반 간증 목록과 동일한 구조
  */
 export async function GET(request: NextRequest) {
@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
     // 페이징 처리를 위한 offset 계산
     const offset = (page - 1) * pageSize;
 
-    // 핫게시글 목록 조회 (좋아요 10개 이상, 좋아요 수 내림차순)
+    // HOT 게시글 목록 조회 (좋아요 10개 이상, 좋아요 수 내림차순)
     const [testimonyRows] = await connection.query(
       `SELECT 
         t.id, t.category, LEFT(t.content, 200) AS content, 
@@ -88,9 +88,9 @@ export async function GET(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("핫게시글 목록 조회 오류:", error);
+    console.error("HOT 게시글 목록 조회 오류:", error);
     return NextResponse.json(
-      { error: "핫게시글 목록 조회에 실패했습니다." },
+      { error: "HOT 게시글 목록 조회에 실패했습니다." },
       { status: 500 }
     );
   }

@@ -43,7 +43,7 @@ export async function GET(
       [id]
     );
 
-    // 간증 상세 조회 (카테고리 및 핫게시글 정보 포함)
+    // 간증 상세 조회 (카테고리 및 HOT 게시글 정보 포함)
     const [testimonyRows] = await connection.query(
       `SELECT 
         t.id, t.category, t.content, 
@@ -223,7 +223,7 @@ export async function PUT(
       }
     }
 
-    // 수정된 간증 조회 (카테고리 및 핫게시글 정보 포함)
+    // 수정된 간증 조회 (카테고리 및 HOT 게시글 정보 포함)
     const [testimonyRows] = await connection.query(
       `SELECT 
         t.id, t.category, t.content, 
