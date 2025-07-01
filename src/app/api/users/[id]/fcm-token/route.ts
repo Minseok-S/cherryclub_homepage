@@ -29,6 +29,13 @@ export async function PATCH(request: NextRequest) {
 
     // 1. JWT 인증
     const authHeader = request.headers.get(AUTH_HEADER);
+    console.log(
+      "Authorization header:",
+      authHeader
+        ? `Bearer ${authHeader.split(" ")[1]?.substring(0, 10)}...`
+        : "없음"
+    );
+
     const token = authHeader?.split(" ")[1];
     if (!token) {
       return NextResponse.json(
@@ -36,6 +43,32 @@ export async function PATCH(request: NextRequest) {
         { status: 401 }
       );
     }
+
+    // 토큰 형식 검증 (JWT는 3개의 부분이 점(.)으로 구분되어야 함)
+    const tokenParts = token.split(".");
+    if (tokenParts.length !== 3) {
+      console.log("잘못된 JWT 토큰 형식 - 부분 수:", tokenParts.length);
+      return NextResponse.json(
+        { success: false, message: "잘못된 토큰 형식입니다." },
+        { status: 401 }
+      );
+    }
+
+    // 각 부분이 base64url 형식인지 확인
+    const base64UrlPattern = /^[A-Za-z0-9_-]+$/;
+    for (let i = 0; i < tokenParts.length; i++) {
+      if (!base64UrlPattern.test(tokenParts[i])) {
+        console.log(
+          `잘못된 JWT 토큰 형식 - 부분 ${i + 1}:`,
+          tokenParts[i].substring(0, 10)
+        );
+        return NextResponse.json(
+          { success: false, message: "잘못된 토큰 형식입니다." },
+          { status: 401 }
+        );
+      }
+    }
+
     const payload = verifyJwt(token);
     if (!payload) {
       return NextResponse.json(

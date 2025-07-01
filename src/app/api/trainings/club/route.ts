@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
     connection = await pool.getConnection();
 
     // universe_id에 해당하는 사용자 ID 목록 조회
-    const userQuery = `SELECT id FROM users WHERE universe_id = ?`;
+    const userQuery = `SELECT id FROM users WHERE universe_id = ? AND enrollment_status != '졸업'`;
     const [userRows] = await connection.query(userQuery, [universeId]);
 
     if (!Array.isArray(userRows) || userRows.length === 0) {

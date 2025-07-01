@@ -9,6 +9,7 @@ import {
   SEMESTER_OPTIONS,
   REGION_OPTIONS,
 } from "../_data/formOptions";
+import { useAcademicYears } from "../_hooks/useAcademicYears";
 
 /**
  * @component UniversityAutoComplete
@@ -205,12 +206,14 @@ function formatPhoneNumber(value: string) {
   return numbersOnly.replace(/(\d{3})(\d{4})(\d{1,4})/, "$1-$2-$3");
 }
 
-// 학번 자동 변환 함수
-function formatStudentId(value: string) {
-  // 숫자만 남기고 2자리까지만
-  const numbersOnly = value.replace(/[^0-9]/g, "").slice(0, 2);
-  if (!numbersOnly) return "";
-  return numbersOnly + "학번";
+// 학번 검증 함수 (DB 기반)
+// Frontend Design Guideline: Predictability - DB에서 가져온 유효한 학번만 허용
+function validateStudentId(value: string, validYearCodes: string[] = []) {
+  if (!value) return "학번을 선택해주세요";
+  if (!validYearCodes.includes(value)) {
+    return "유효하지 않은 학번입니다";
+  }
+  return true;
 }
 
 // 생년월일 자동 변환 함수
@@ -242,6 +245,15 @@ const JoinFormSection: React.FC = () => {
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // DB에서 학번 데이터 가져오기
+  // Frontend Design Guideline: Cohesion - 학번 관련 로직을 한 곳에 집중
+  const {
+    academicYears,
+    loading: academicYearsLoading,
+    error: academicYearsError,
+  } = useAcademicYears();
+
   const {
     register,
     handleSubmit,
@@ -546,32 +558,42 @@ const JoinFormSection: React.FC = () => {
                   className="block mb-2 font-medium text-gray-700"
                 >
                   학번
+                  {academicYearsLoading && (
+                    <span className="text-sm text-gray-500 ml-2">
+                      불러오는 중...
+                    </span>
+                  )}
+                  {academicYearsError && (
+                    <span className="text-sm text-red-500 ml-2">오류 발생</span>
+                  )}
                 </label>
                 <Controller
                   name="student_id"
                   control={control}
                   rules={{
-                    required: "학번을 입력해주세요",
-                    pattern: {
-                      value: /^\d{2}학번$/,
-                      message: "예: 19학번, 20학번 형식으로 입력해주세요",
-                    },
+                    validate: (value) =>
+                      validateStudentId(
+                        value,
+                        academicYears.map((year) => year.year_code)
+                      ),
                   }}
                   render={({ field }) => (
-                    <input
-                      type="text"
+                    <select
                       id="student_id"
                       className={`w-full px-4 py-2 border ${
                         errors.student_id ? "border-red-500" : "border-gray-300"
                       } rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors`}
-                      placeholder="예: 19학번"
                       value={field.value || ""}
-                      onChange={(e) => {
-                        const formatted = formatStudentId(e.target.value);
-                        field.onChange(formatted);
-                      }}
-                      maxLength={5}
-                    />
+                      onChange={field.onChange}
+                      disabled={academicYearsLoading}
+                    >
+                      <option value="">학번 선택</option>
+                      {academicYears.map((year) => (
+                        <option key={year.year_code} value={year.year_code}>
+                          {year.display_name}
+                        </option>
+                      ))}
+                    </select>
                   )}
                 />
                 {errors.student_id && (
