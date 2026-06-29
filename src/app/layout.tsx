@@ -17,7 +17,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "체리 동아리",
+  title: "대학캠퍼스",
   description: "체리 동아리 홍보 및 모집 홈페이지",
   keywords: [
     "체리동아리",
@@ -31,13 +31,13 @@ export const metadata: Metadata = {
   },
   metadataBase: new URL("https://cherryclub.kr"),
   openGraph: {
-    title: "체리 동아리",
-    description: "체리 동아리 홍보 및 모집 홈페이지",
+    title: "NCMN 대학캠퍼스",
+    description: "5K운동 소개페이지",
     url: "https://cherryclub.kr",
-    siteName: "체리 동아리",
+    siteName: "NCMN 대학캠퍼스",
     images: [
       {
-        url: "/og-image.png",
+        url: "/images/logo.png",
         width: 1200,
         height: 630,
       },
@@ -47,8 +47,8 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "체리 동아리",
-    description: "체리 동아리 홍보 및 모집 홈페이지",
+    title: "NCMN 대학캠퍼스",
+    description: "5K운동 소개페이지",
   },
   robots: {
     index: true,

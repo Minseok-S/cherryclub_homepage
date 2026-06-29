@@ -47,7 +47,7 @@ export default function IntroductionSection() {
           transition={{ duration: 1, delay: 0.4, ease: "easeOut" }}
           className="text-base sm:text-lg text-gray-500 leading-relaxed max-w-xl mb-16"
         >
-          활동 사진을 통해 체리클럽의 다양한 5K 사역 현장을 만나보세요.
+          활동 사진을 통해 대학캠퍼스의 다양한 5K 사역 현장을 만나보세요.
         </motion.p>
 
         {/* 모바일: 회전목마 (coverflow) */}
@@ -86,8 +86,8 @@ export default function IntroductionSection() {
                 index === 0
                   ? "sm:col-span-2"
                   : index === cards.length - 1 && cards.length === 3
-                  ? "sm:col-span-3"
-                  : "sm:col-span-1"
+                    ? "sm:col-span-3"
+                    : "sm:col-span-1"
               }
             >
               <IntroductionCard card={card} index={index} isMobile={false} />
